@@ -1,81 +1,136 @@
-# bs-imgui
+![xx](assets/banner.png)
+### [English Version](README_EN.md)
 
-An Android sandbox **loader** built on **Mundo** (a BlackBox fork) with its own UI, its own native
-payload, and no licensing/activation call.
+# 虚拟引擎 · BlackBox
+> The only people who have anything to fear from free software are those whose products are worth even less. 
+>
+> <p align="right">——David Emery</p>
 
-The app virtualizes a target game inside a sandbox process and launches it, so the game runs
-with the loader's hooks applied without touching the installed APK.
+![](https://img.shields.io/badge/language-java-brightgreen.svg)
 
-## Layout
+黑盒BlackBox，是一款虚拟引擎，可以在Android上克隆、运行虚拟应用，拥有免安装运行能力。黑盒可以掌控被运行的虚拟应用，做任何想做的事情。
 
-```
-.
-├── app/                              # the loader app module (com.zyn.bs)
-│   ├── libs/mundo-release.aar        # Mundo core (BlackBox fork), unmodified
-│   ├── proguard-rules.pro            # keeps the core, obfuscates our own code
-│   └── src/main/
-│       ├── assets/a7f3c9.bin         # AES-256-GCM encrypted wallpaper
-│       ├── java/com/zyn/bs/
-│       │   ├── LauncherActivity.java # UI host + launch orchestration
-│       │   ├── LaunchController.java # clone → launch flow (Mundo)
-│       │   ├── GameConfig.java       # ← set the target package name here
-│       │   ├── GameResolver.java     # package name → label + icon
-│       │   ├── BoxApplication.java   # host Application (core self-initialises)
-│       │   ├── NativeBridge.java     # JNI hook point for libzyn-bs.so
-│       │   ├── crypto/AssetCrypto.java
-│       │   └── ui/                   # LauncherView, PulseDots, CircleIcon
-│       ├── jni/                      # native payload (ndk-build)
-│       └── res/                      # strings, colors, style, icon
-├── .github/workflows/android-build.yml
-└── build.gradle / settings.gradle
-```
+## 支持
+暂不考虑4x，目前已兼容 5.0 ～ 12.0并跟进后续新系统。
 
-## Configure the target game
+如果条件允许，降级targetSdkVersion到28或以下可以获得更好的兼容性。
 
-Edit **`app/src/main/java/com/zyn/bs/GameConfig.java`**:
+***稳定性未经大量测试，仅供学习交流，请勿用于其他用途***
+
+## 编译版本下载
+稳定版与测试版下载
+- 稳定版 由管理员手动发布经过验证稳定后的版本。[下载地址](https://github.com/FBlackBox/BlackBox/releases)
+- 测试版 由机器自动编译最新的代码的版本，可体验最新体验也有可能存在问题。 [下载地址](https://github.com/AutoBlackBox/BlackBox/tags)
+
+## 架构说明
+本项目区分32位与64位，目前是2个不同的app，如在Demo已安装列表内无法找到需要开启的app说明不支持，请编译其他的架构。
+
+## 如何使用
+### Step 1.初始化，在Application中加入以下代码初始化
 
 ```java
-public static final String PACKAGE_NAME = "com.netease.newspike";
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(base);
+        try {
+            BlackBoxCore.get().doAttachBaseContext(base, new ClientConfiguration() {
+                @Override
+                public String getHostPackageName() {
+                    return base.getPackageName();
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        BlackBoxCore.get().doCreate();
+    }
 ```
 
-The title and icon are looked up from the installed package at runtime — nothing is hardcoded
-in the UI. If the game isn't installed, the app shows **INSTALL GAME** and opens the Play Store
-listing for that package.
-
-## Build
-
-Gradle drives `ndk-build` itself, so a single command builds the Java app *and* the native payload:
-
-```bash
-gradle assembleDebug
+### Step 2.安装应用至黑盒内
+```java
+    // 已安装的应用可以提供包名
+    BlackBoxCore.get().installPackageAsUser("com.tencent.mm", userId);
+    
+    // 未安装的应用可以提供路径
+    BlackBoxCore.get().installPackageAsUser(new File("/sdcard/com.tencent.mm.apk"), userId);
 ```
 
-Requires JDK 17, Android SDK 34, and NDK `27.0.12077973` (r26+). The APK is signed from
-`signing.properties` + the `.jks` at the project root — including the debug build type, so it is
-signed with the project key rather than the default Android debug key. Without those files it falls
-back to the default debug key.
-
-`targetSdk` is pinned to **28** on purpose: the core's reflected platform APIs are the pre-29 ones.
-The `ExpiredTargetSdkVersion` lint check is disabled for that reason — this is a sideloaded app, not
-a Play Store submission.
-
-## Encrypted assets
-
-The wallpaper ships as an AES-256-GCM blob (`assets/a7f3c9.bin`) instead of a readable image,
-and is decrypted in memory on first use. The key is stored split-and-masked in `AssetCrypto`, and
-the asset name is authenticated as GCM associated data — so renaming or editing the blob makes it
-fail to decrypt rather than silently load altered content.
-
-Regenerate:
-
-```bash
-python3 .polydev/encrypt_assets.py <plain-image> app/src/main/assets/<name>.bin <name>.bin
+### Step 2.运行黑盒内的应用
+```java
+   BlackBoxCore.get().launchApk("com.tencent.mm", userId);
 ```
 
-The script prints the `KEY_PARTS` / `KEY_MASKS` to paste into `AssetCrypto.java`.
+### 多开应用操作
+<img src="assets/multiw.gif" width="50%">
 
-## CI
+### 相关API
+#### 获取黑盒内已安装的应用
+```java
+   // flgas与常规获取已安装应用保持一致即可
+   BlackBoxCore.get().getInstalledApplications(flags, userId);
+   
+   BlackBoxCore.get().getInstalledPackages(flags, userId);
+```
 
-`.github/workflows/android-build.yml` decodes the signing secrets, installs the NDK, builds with
-Gradle, verifies the APK with `apksigner`, and reports to Telegram — the build log on failure, the
-signed APK on success. Logs and APKs are kept as a build artifact.
+#### 获取黑盒内的User信息
+```java
+   List<BUserInfo> users = BlackBoxCore.get().getUsers();
+```
+更多其他操作看BlackBoxCore函数名大概就知道了。
+
+
+#### Xposed相关
+- 已支持使用XP模块
+- Xposed已粗略过检测，[Xposed Checker](https://www.coolapk.com/apk/190247)、[XposedDetector](https://github.com/vvb2060/XposedDetector) 均无法检测
+
+
+## 如何参与开发？
+### 应用分2个模块
+- app模块，用户操作与UI模块
+- Bcore模块，此模块为BlackBox的核心模块，负责完成整个黑盒的调度。
+
+如需要参与开发请直接pr就可以了，相关教程请Google或者看 [如何在 GitHub 提交第一个 pull request](https://chinese.freecodecamp.org/news/how-to-make-your-first-pull-request-on-github/)
+### PR须知
+1. 中英文说明都可以，但是一定要详细说明问题
+2. 请遵从原项目的代码风格、设计模式，请勿个性化。
+3. PR不分大小，有问题随时欢迎提交。
+
+## 计划
+ - 更多的Service API 虚拟化（目前许多是使用系统API，只有少数已实现）
+ - 提供更多接口给开发者（虚拟定位、应用注入等）
+
+## 赞助
+本项目为免费开源项目，日常维护耗费大量精力。如想加快进度或请作者喝杯咖啡。
+
+- BTC: 3FCo9QtaSbGMhmZYzvL4XUoJUUxZeSdha4
+- USDT（TRC20）: TDzBj9eV1Cdmmj9xd5Y1YLsQqC8zVgi7yd
+
+## 感谢
+- [VirtualApp](https://github.com/asLody/VirtualApp)
+- [VirtualAPK](https://github.com/didi/VirtualAPK)
+- [BlackReflection](https://github.com/CodingGay/BlackReflection)
+- [FreeReflection](https://github.com/tiann/FreeReflection)
+- [Pine](https://github.com/canyie/pine)
+
+### License
+
+> ```
+> Copyright 2022 BlackBox
+>
+> Licensed under the Apache License, Version 2.0 (the "License");
+> you may not use this file except in compliance with the License.
+> You may obtain a copy of the License at
+>
+>    http://www.apache.org/licenses/LICENSE-2.0
+>
+> Unless required by applicable law or agreed to in writing, software
+> distributed under the License is distributed on an "AS IS" BASIS,
+> WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+> See the License for the specific language governing permissions and
+> limitations under the License.
+> ```
