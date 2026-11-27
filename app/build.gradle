@@ -124,8 +124,13 @@ android {
 }
 
 dependencies {
-    // The Mundo core (the BlackBox fork this loader is built on).
-    implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
+    // The sandbox core, built from source (Bcore + black-fake + black-hook +
+    // android-mirror). This replaces the prebuilt mundo-release.aar: the core is
+    // now licence-free and compiles every ABI. If you would rather skip the
+    // core rebuild, drop dist/bcore-all.jar into app/libs instead and swap this
+    // line for implementation files('libs/bcore-all.jar').
+    implementation project(':Bcore')
+
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
 }

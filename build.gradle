@@ -3,12 +3,128 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://jitpack.io' }
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.1.2'
     }
 }
 
+// Read by every module's build.gradle — Bcore and its submodules use rootProject.ext.
+ext {
+    compileSdkVersion = 34
+    buildToolsVersion = "34.0.0"
+    targetSdkVersion = 28
+    blackReflection = '1.1.4'
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
+}
+
+// ---------------------------------------------------------------------------
+// Distribution: merge the whole sandbox core into one reusable jar.
+//
+// The core is four library modules, so a normal build emits four AARs. This task
+// folds their classes (plus the handful of small Maven libs the core needs at
+// runtime) into dist/bcore-all.jar. Drop that into app/libs/ and depend on it
+// instead of :Bcore to skip compiling the core's ~450 Java files.
+//
+// What it does NOT contain: libsandbox.so. The CMake build in :Bcore still has
+// to run for the native engine — the jar only saves the Java side. Android
+// framework / AndroidX classes are never bundled either.
+// ---------------------------------------------------------------------------
+def bcoreModules = [':Bcore', ':Bcore:black-fake', ':Bcore:black-hook', ':Bcore:android-mirror']
+
+// The core's own runtime dependencies. Kept tiny on purpose: no appcompat, no
+// material, nothing the host app already provides.
+configurations {
+    bcoreRuntimeLibs {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = true
+    }
+}
+
+dependencies {
+    bcoreRuntimeLibs 'com.github.tiann:FreeReflection:3.1.0'
+    bcoreRuntimeLibs "com.github.CodingGay.BlackReflection:core:$blackReflection"
+    bcoreRuntimeLibs 'top.canyie.pine:core:0.2.9'
+    bcoreRuntimeLibs 'top.canyie.pine:xposed:0.1.0'
+}
+
+tasks.register('bcoreJar') {
+    group = 'distribution'
+    description = 'Merges Bcore + submodules + their small runtime deps into dist/bcore-all.jar'
+
+    // The APK is a debug build, so build the core's debug AARs: no second,
+    // release-variant compile of the same sources.
+    dependsOn bcoreModules.collect { "${it}:assembleDebug" }
+
+    def outDir = file("$rootDir/dist")
+    def outFile = new File(outDir, 'bcore-all.jar')
+    def aars = bcoreModules.collect { p ->
+        new File(project(p).buildDir, "outputs/aar/${project(p).name}-debug.aar")
+    }
+
+    inputs.files(aars)
+    outputs.file(outFile)
+
+    doLast {
+        outDir.mkdirs()
+        def seen = new LinkedHashSet<String>()
+
+        new java.util.zip.ZipOutputStream(new FileOutputStream(outFile)).withCloseable { zos ->
+            def copyEntry = { java.util.zip.ZipInputStream zis, String name ->
+                if (name.startsWith('META-INF/')) return
+                if (name.endsWith('/')) return
+                if (!seen.add(name)) return
+                zos.putNextEntry(new java.util.zip.ZipEntry(name))
+                byte[] buf = new byte[8192]
+                int n
+                while ((n = zis.read(buf)) > 0) {
+                    zos.write(buf, 0, n)
+                }
+                zos.closeEntry()
+            }
+
+            // 1. Every module's compiled classes, taken from its AAR (this avoids
+            //    depending on AGP's internal intermediates/ layout).
+            aars.each { aar ->
+                if (!aar.exists()) {
+                    throw new GradleException("Missing AAR: ${aar}\nRun assembleDebug for the core first.")
+                }
+                new java.util.zip.ZipFile(aar).withCloseable { zf ->
+                    def classesJar = zf.getEntry('classes.jar')
+                    if (classesJar == null) {
+                        throw new GradleException("No classes.jar inside ${aar}")
+                    }
+                    new java.util.zip.ZipInputStream(zf.getInputStream(classesJar)).withCloseable { zis ->
+                        def entry
+                        while ((entry = zis.nextEntry) != null) {
+                            copyEntry(zis, entry.name)
+                        }
+                    }
+                }
+            }
+
+            // 2. The core's runtime libraries, so the jar is self-sufficient.
+            configurations.bcoreRuntimeLibs.resolvedConfiguration.resolvedArtifacts.each { art ->
+                def file = art.file
+                if (!file.name.endsWith('.jar')) return
+                new java.util.zip.ZipInputStream(new FileInputStream(file)).withCloseable { zis ->
+                    def entry
+                    while ((entry = zis.nextEntry) != null) {
+                        copyEntry(zis, entry.name)
+                    }
+                }
+            }
+        }
+
+        if (outFile.length() < 100_000) {
+            throw new GradleException(
+                    "bcore-all.jar is only ${outFile.length()} bytes — the core classes are missing.")
+        }
+        println "bcore-all.jar: ${outFile.absolutePath} (${outFile.length()} bytes, ${seen.size()} entries)"
+    }
 }

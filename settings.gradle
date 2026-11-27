@@ -16,4 +16,12 @@ dependencyResolutionManagement {
 }
 
 include ':app'
+
+// The sandbox core, built from source as library modules.
+// android-mirror lives under Bcore/ as a submodule, like black-fake and black-hook.
+include ':Bcore'
+include ':Bcore:black-fake'
+include ':Bcore:black-hook'
+include ':Bcore:android-mirror'
+
 rootProject.name = 'BSKillerLoader'

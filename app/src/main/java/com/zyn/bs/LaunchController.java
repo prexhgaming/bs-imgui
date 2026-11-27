@@ -6,9 +6,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import net_62v.external.MetaActivityManager;
-import net_62v.external.MetaApplicationInstaller;
-import net_62v.external.MetaStorageManager;
+import com.hello.sandbox.SandBoxCore;
+import com.hello.sandbox.core.env.BEnvironment;
+import com.hello.sandbox.entity.pm.InstallResult;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -17,7 +17,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 /**
- * The Mundo launch sequence, in the same order the reference loader used:
+ * The launch sequence, in the same order the reference loader used:
  *
  * <ol>
  *   <li>already cloned inside the sandbox → launch</li>
@@ -25,10 +25,9 @@ import java.io.OutputStream;
  *   <li>not installed anywhere → error</li>
  * </ol>
  *
- * <p>Every core call is a static entry point on {@code net_62v.external.*}. The
- * core must first be activated ({@link CoreActivation}) or it answers every one
- * of those calls by refusing to start and popping its "not prepared" toast, so
- * activation is re-checked here before each launch.</p>
+ * <p>Every core call goes through {@link SandBoxCore}. There is no activation
+ * step: the core is a licence-free build and sets itself up in
+ * {@code BoxApplication.attachBaseContext}.</p>
  *
  * <p>Launch itself waits 3 s (the reference showed a loading animation for that
  * long) and the payload hook fires 10 s later, mirroring the reference's ESP
@@ -38,7 +37,9 @@ public class LaunchController {
 
     private static final String TAG = "LaunchController";
 
-    /** Delay before {@code launchApp}, matching the reference's dialog. */
+    /** Sandbox user slot the game is cloned into. */
+    private static final int USER_ID = 0;
+    /** Delay before {@code launchApk}, matching the reference's dialog. */
     private static final long LAUNCH_DELAY_MS = 3000L;
     /** Delay before the native payload hook, matching the reference's ESP start. */
     private static final long PAYLOAD_DELAY_MS = 10000L;
@@ -84,17 +85,10 @@ public class LaunchController {
     }
 
     private void resolveAndRun() {
-        // First launch after a reboot may race the boot-time activation (it needs
-        // a network round trip), which is what produces the core's "not prepared"
-        // toast, so settle it before touching the sandbox.
-        if (!CoreActivation.isPrepared()) {
-            CoreActivation.activate();
-        }
-
         final boolean inSandbox;
         final boolean onDevice;
         try {
-            inSandbox = MetaActivityManager.isInnerPackageInstalled(packageName);
+            inSandbox = SandBoxCore.get().isInstalled(packageName, USER_ID);
             onDevice = isInstalledOnDevice();
         } catch (Throwable t) {
             Log.e(TAG, "state resolution failed", t);
@@ -126,12 +120,15 @@ public class LaunchController {
         emit(State.INSTALLING, context.getString(R.string.status_installing));
         mainHandler.postDelayed(() -> {
             try {
-                // Returns a status code, but this build's convertResultToString()
-                // is a "Not Support." stub, so — exactly like the reference — a
-                // thrown exception is the only failure signal we can rely on.
-                MetaApplicationInstaller.cloneApp(packageName);
+                InstallResult result = SandBoxCore.get()
+                        .installPackageAsUser(packageName, USER_ID);
+                if (result != null && !result.success) {
+                    Log.e(TAG, "installPackageAsUser failed: " + result.msg);
+                    fail(context.getString(R.string.error_install_failed));
+                    return;
+                }
             } catch (Throwable t) {
-                Log.e(TAG, "cloneApp failed", t);
+                Log.e(TAG, "installPackageAsUser threw", t);
                 fail(context.getString(R.string.error_install_failed));
                 return;
             }
@@ -145,10 +142,16 @@ public class LaunchController {
         emit(State.LAUNCHING, context.getString(R.string.status_launching));
 
         mainHandler.postDelayed(() -> {
+            final boolean started;
             try {
-                MetaActivityManager.launchApp(packageName);
+                started = SandBoxCore.get().launchApk(packageName, USER_ID);
             } catch (Throwable t) {
-                Log.e(TAG, "launchApp failed", t);
+                Log.e(TAG, "launchApk threw", t);
+                fail(context.getString(R.string.error_install_failed));
+                return;
+            }
+            if (!started) {
+                Log.e(TAG, "launchApk returned false (no launch intent?)");
                 fail(context.getString(R.string.error_install_failed));
                 return;
             }
@@ -158,16 +161,21 @@ public class LaunchController {
     }
 
     /**
-     * Copies {@code main.<n>.<pkg>.obb} from shared storage into the sandboxed
-     * game's external storage — the same "only if missing" rule as the reference,
-     * with the destination resolved through {@code MetaStorageManager} instead of
-     * the old hardcoded {@code SdCard} mirror.
+     * Copies {@code main.<n>.<pkg>.obb} from the device's real OBB folder into
+     * the sandbox's virtual SD card — the same "only if missing" rule as the
+     * reference.
+     *
+     * <p>The guest sees {@code /storage/emulated/0/Android/...} redirected onto
+     * {@link BEnvironment#getExternalUserDir(int)}, so that is where the file has
+     * to land. Resolving it through the core (instead of hardcoding the old
+     * {@code vSdcard} mirror the reference used) keeps it correct if the core
+     * moves its sandbox root.</p>
      */
     private void copyObbIfNeeded() {
         final File sandboxObb;
         try {
             sandboxObb = new File(
-                    MetaStorageManager.obtainAppExternalStorageDir(packageName) + "/Android/obb",
+                    new File(BEnvironment.getExternalUserDir(USER_ID), "Android/obb"),
                     packageName);
         } catch (Throwable t) {
             Log.w(TAG, "could not resolve the sandbox OBB directory", t);

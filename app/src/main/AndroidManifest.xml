@@ -28,9 +28,9 @@
         </activity>
 
         <!--
-            The Mundo core's components (MundoSupervisorProvider, the :stubN
-            process pool, MundoService/MundoReceiver, MundoSplashLauncher, ...)
-            are merged in from mundo-release.aar. Do not declare them here.
+            The core's components (SandBoxManagerService, the :p0..:p99 process
+            pool, the proxy activities/services, DaemonService, ...) are merged
+            in from the :Bcore library module. Do not declare them here.
         -->
     </application>
 
