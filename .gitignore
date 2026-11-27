@@ -10,6 +10,9 @@ dist/
 build/
 out/
 lib/
+# NDK (ndk-build) output — see .github/workflows/android-build.yml
+cpp/libs/
+cpp/obj/
 *.o
 *.obj
 *.a
@@ -20,6 +23,8 @@ lib/
 *.exe
 *.lib
 *.pdb
+# ...except the prebuilt static libs the NDK build links against (see cpp/Android.mk)
+!cpp/Dobby/libraries/**/*.a
 *.ilk
 *.dSYM/
 *.app/
@@ -80,3 +85,4 @@ desktop.ini
 # ---- Agent tooling (local only) ----
 .polydev/
 .base/
+uploads/

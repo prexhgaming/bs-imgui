@@ -1,0 +1,164 @@
+name: Android NDK Build
+
+# Builds cpp/ (ndk-build) and reports to Telegram:
+#   - on failure  -> the full build log (ndk-build.log)
+#   - on success  -> dist/libs.zip, laid out as <abi>/<lib>.so
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cpp/**'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    paths:
+      - 'cpp/**'
+      - '.github/workflows/android-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # r26+ is required: Application.mk sets APP_SUPPORT_FLEXIBLE_PAGE_SIZES (16KB pages).
+  NDK_VERSION: r27c
+  PROJECT_DIR: cpp
+  LOG_FILE: ndk-build.log
+  LIB_ZIP: dist/libs.zip
+
+jobs:
+  build:
+    name: ndk-build (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+          local-cache: true
+
+      # `tee` keeps the full output on disk for the Telegram upload while it still
+      # streams live to the Actions log. pipefail is what makes the step fail on a
+      # compile error instead of on tee's exit code.
+      - name: Build with ndk-build (tee to log)
+        id: build
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -o pipefail
+          {
+            echo "== ndk-build =="
+            ndk-build --version 2>&1 | head -3
+            echo "== Application.mk ABI(s) =="
+            grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' Application.mk || true
+            echo "== started: $(date -u +%FT%TZ) =="
+            echo
+          } | tee ../"$LOG_FILE"
+
+          ndk-build \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=Android.mk \
+            NDK_APPLICATION_MK=Application.mk \
+            -j"$(nproc)" 2>&1 | tee -a ../"$LOG_FILE"
+
+      # Collects every built .so and zips it with the ABI directory preserved,
+      # so the archive root is exactly: armeabi-v7a/libzyn-bs.so (and so on per ABI).
+      - name: Package libs by architecture
+        id: pack
+        if: success()
+        run: |
+          set -euo pipefail
+          mapfile -t sos < <(find "$PROJECT_DIR/libs" -type f -name '*.so' | sort)
+          if [ "${#sos[@]}" -eq 0 ]; then
+            echo "::error::ndk-build reported success but produced no .so under $PROJECT_DIR/libs"
+            exit 1
+          fi
+          printf 'built: %s\n' "${sos[@]}"
+
+          mkdir -p dist
+          rm -f "$LIB_ZIP"
+          ( cd "$PROJECT_DIR/libs" && zip -r "$GITHUB_WORKSPACE/$LIB_ZIP" . -x '*.d' '*.o' > /dev/null )
+
+          echo "== $LIB_ZIP =="
+          unzip -l "$LIB_ZIP"
+
+          {
+            echo "abis<<EOF"
+            for d in "$PROJECT_DIR"/libs/*/; do basename "$d"; done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Telegram - send build log (failure)
+        if: failure()
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          if [ -z "${BOT_TOKEN:-}" ] || [ -z "${CHAT_ID:-}" ]; then
+            echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID missing - skipping notification"
+            exit 0
+          fi
+          if [ ! -s "$LOG_FILE" ]; then
+            echo "::warning::No $LOG_FILE was produced - nothing to send"
+            exit 0
+          fi
+
+          curl -sS --fail-with-body \
+            -F "chat_id=${CHAT_ID}" \
+            -F "document=@${LOG_FILE};filename=build-${GITHUB_RUN_NUMBER}-failed.log" \
+            -F "caption=❌ Build FAILED - ${GITHUB_REPOSITORY}
+          ref: ${GITHUB_REF_NAME}  |  run: #${GITHUB_RUN_NUMBER}
+          commit: ${GITHUB_SHA:0:7}
+          ndk: ${NDK_VERSION}" \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
+          echo
+
+      - name: Telegram - send libs.zip (success)
+        if: success()
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ABIS: ${{ steps.pack.outputs.abis }}
+        run: |
+          set -uo pipefail
+          if [ -z "${BOT_TOKEN:-}" ] || [ -z "${CHAT_ID:-}" ]; then
+            echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID missing - skipping notification"
+            exit 0
+          fi
+          if [ ! -s "$LIB_ZIP" ]; then
+            echo "::warning::$LIB_ZIP missing - nothing to send"
+            exit 0
+          fi
+
+          curl -sS --fail-with-body \
+            -F "chat_id=${CHAT_ID}" \
+            -F "document=@${LIB_ZIP};filename=libs-${GITHUB_RUN_NUMBER}.zip" \
+            -F "caption=✅ Build OK - ${GITHUB_REPOSITORY}
+          ref: ${GITHUB_REF_NAME}  |  run: #${GITHUB_RUN_NUMBER}
+          commit: ${GITHUB_SHA:0:7}
+          abi(s): $(echo "${ABIS:-?}" | tr '\n' ' ')" \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
+          echo
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ndk-build-${{ github.run_number }}
+          path: |
+            ${{ env.LOG_FILE }}
+            ${{ env.LIB_ZIP }}
+          if-no-files-found: warn
+          retention-days: 14
