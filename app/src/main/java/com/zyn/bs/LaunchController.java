@@ -26,9 +26,12 @@ import top.niunaijun.blackbox.entity.pm.InstallResult;
  * step: the core carries no licence gate and sets itself up in
  * {@code BoxApplication.attachBaseContext}.</p>
  *
- * <p>Launch itself waits 3 s (the reference showed a loading animation for that
- * long) and the payload hook fires 10 s later, mirroring the reference's ESP
- * start.</p>
+ * <p>There is no worker thread and no artificial delay: the whole sequence is
+ * plain core API calls on the caller's thread, the same way the reference app
+ * does it ({@code AutoImportManager.importIfNeeded()} then
+ * {@code launchApk()}). The payload is not armed here at all — it is loaded
+ * inside the guest process by
+ * {@code BoxApplication.GuestPayloadLoader.beforeApplicationOnCreate}.</p>
  */
 public class LaunchController {
 
@@ -36,9 +39,6 @@ public class LaunchController {
 
     /** Sandbox user slot the game is cloned into. */
     private static final int USER_ID = 0;
-    /** Delay before {@code launchApk}, matching the reference's dialog. */
-    private static final long LAUNCH_DELAY_MS = 3000L;
-    /** Delay before the native payload hook, matching the reference's ESP start. */
 
     public enum State {
         IDLE,
@@ -76,8 +76,10 @@ public class LaunchController {
         }
         busy = true;
         emit(State.IDLE, null);
-
-        new Thread(this::resolveAndRun, "launch-resolve").start();
+        // Run the full sequence: install-if-missing-then-launch. No extra
+        // worker thread, no artificial delay — just the core API, same as the
+        // reference app's AutoImportManager + launchApk flow.
+        resolveAndRun();
     }
 
     private void resolveAndRun() {
@@ -93,9 +95,9 @@ public class LaunchController {
         }
 
         if (inSandbox) {
-            post(this::launchGame);
+            launchGame();
         } else if (onDevice) {
-            post(this::installGame);
+            installGame();
         } else {
             fail(context.getString(R.string.error_not_installed));
         }
@@ -112,55 +114,46 @@ public class LaunchController {
     }
 
     /**
-     * Step 2 — clone the device install into the sandbox, then launch.
-     *
-     * <p>No OBB handling anywhere: the game ships as a single APK with no
-     * expansion file, so the installer only has to copy the package.</p>
+     * Clone the device install into the sandbox, then launch. No OBB handling:
+     * the game ships as a single APK with no expansion file.
      */
     private void installGame() {
         emit(State.INSTALLING, context.getString(R.string.status_installing));
-        mainHandler.postDelayed(() -> {
-            try {
-                InstallResult result = BlackBoxCore.get()
-                        .installPackageAsUser(packageName, USER_ID);
-                if (result != null && !result.success) {
-                    Log.e(TAG, "installPackageAsUser failed: " + result.msg);
-                    fail(context.getString(R.string.error_install_failed));
-                    return;
-                }
-            } catch (Throwable t) {
-                Log.e(TAG, "installPackageAsUser threw", t);
+        try {
+            InstallResult result = BlackBoxCore.get()
+                    .installPackageAsUser(packageName, USER_ID);
+            if (result != null && !result.success) {
+                Log.e(TAG, "installPackageAsUser failed: " + result.msg);
                 fail(context.getString(R.string.error_install_failed));
                 return;
             }
-            launchGame();
-        }, 2000L);
+        } catch (Throwable t) {
+            Log.e(TAG, "installPackageAsUser threw", t);
+            fail(context.getString(R.string.error_install_failed));
+            return;
+        }
+        launchGame();
     }
 
-    /** Step 1/3 — launch the sandboxed game; the guest then loads the payload. */
+    /** Launch the sandboxed game. The guest AppLifecycleCallback loads the payload. */
     private void launchGame() {
         emit(State.LAUNCHING, context.getString(R.string.status_launching));
-
-        mainHandler.postDelayed(() -> {
-            final boolean started;
-            try {
-                started = BlackBoxCore.get().launchApk(packageName, USER_ID);
-            } catch (Throwable t) {
-                Log.e(TAG, "launchApk threw", t);
-                fail(context.getString(R.string.error_install_failed));
-                return;
-            }
-            if (!started) {
-                Log.e(TAG, "launchApk returned false (no launch intent?)");
-                fail(context.getString(R.string.error_install_failed));
-                return;
-            }
-            emit(State.RUNNING, context.getString(R.string.status_running));
-            // The payload is deliberately NOT armed here. It creates the game's
-            // lifecycle, so it must be loaded in the guest process where that
-            // lifecycle exists — see BoxApplication.GuestPayloadLoader. Loading
-            // it in this process did nothing at all.
-        }, LAUNCH_DELAY_MS);
+        final boolean started;
+        try {
+            started = BlackBoxCore.get().launchApk(packageName, USER_ID);
+        } catch (Throwable t) {
+            Log.e(TAG, "launchApk threw", t);
+            fail(context.getString(R.string.error_install_failed));
+            return;
+        }
+        if (!started) {
+            Log.e(TAG, "launchApk returned false (no launch intent?)");
+            fail(context.getString(R.string.error_install_failed));
+            return;
+        }
+        emit(State.RUNNING, context.getString(R.string.status_running));
+        // Payload loads in the guest process via
+        // BoxApplication.GuestPayloadLoader.beforeApplicationOnCreate.
     }
 
     private void fail(String message) {
@@ -173,10 +166,6 @@ public class LaunchController {
         if (callback != null) {
             callback.onStateChanged(state, message);
         }
-    }
-
-    private void post(Runnable runnable) {
-        mainHandler.post(runnable);
     }
 
     /** Releases pending callbacks; call from {@code onDestroy}. */
