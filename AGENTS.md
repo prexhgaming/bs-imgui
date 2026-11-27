@@ -15,9 +15,12 @@
 - Repo root **is** the Gradle source root (the app used to live in `loader/`, now flattened).
 - `app/` — the loader app module (`com.zyn.bs`), a Mundo (BlackBox fork) sandbox loader.
 - `app/src/main/jni/` — the native payload, an **ndk-build** project (`Android.mk` + `Application.mk`).
-- `app/libs/mundo-release.aar` — the **Mundo** core (a BlackBox fork), unmodified; **must stay
-  committed**. It is self-contained: it ships its own manifest components (merged in by AGP), its own
+- `app/libs/mundo-release.aar` — the **Mundo** core (a BlackBox fork); **must stay committed**.
+  It is self-contained: it ships its own manifest components (merged in by AGP), its own
   consumer ProGuard rules (`proguard.txt`), and per-ABI `libzyluqeh.so` — including `armeabi-v7a`.
+  Its `jni/riscv64/` entry has been **stripped**: AGP 8.1 rejects that folder name
+  (`jni extracted from path .../jni/riscv64/libzyluqeh.so is not an ABI`) and `mergeDebugNativeLibs`
+  fails. Strip it again if the AAR is ever replaced.
 - `app/src/main/assets/a7f3c9.bin` — AES-256-GCM encrypted wallpaper (see "Encrypted assets").
 
 ## Building
