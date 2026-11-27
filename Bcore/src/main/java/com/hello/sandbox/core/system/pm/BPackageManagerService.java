@@ -35,7 +35,6 @@ import com.hello.sandbox.utils.AbiUtils;
 import com.hello.sandbox.utils.FileUtils;
 import com.hello.sandbox.utils.Slog;
 import com.hello.sandbox.utils.compat.PackageParserCompat;
-import com.hello.sandbox.utils.compat.XposedParserCompat;
 import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -527,10 +526,6 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
       synchronized (mPackages) {
         BPackageSettings ps = mPackages.get(packageName);
         if (ps == null) return;
-        if (ps.installOption.isFlag(InstallOption.FLAG_XPOSED)
-            && userId != BUserHandle.USER_XPOSED) {
-          return;
-        }
         if (!isInstalled(packageName, userId)) {
           return;
         }
@@ -570,22 +565,12 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         BPackageSettings ps = mPackages.get(packageName);
         if (ps == null) return;
         BProcessManagerService.get().killAllByPackageName(packageName);
-        if (ps.installOption.isFlag(InstallOption.FLAG_XPOSED)) {
-          for (BUserInfo user : BUserManagerService.get().getAllUsers()) {
-            int i = BPackageInstallerService.get().uninstallPackageAsUser(ps, true, user.id);
-            if (i < 0) {
-              continue;
-            }
-            onPackageUninstalled(packageName, true, user.id);
+        for (Integer userId : ps.getUserIds()) {
+          int i = BPackageInstallerService.get().uninstallPackageAsUser(ps, true, userId);
+          if (i < 0) {
+            continue;
           }
-        } else {
-          for (Integer userId : ps.getUserIds()) {
-            int i = BPackageInstallerService.get().uninstallPackageAsUser(ps, true, userId);
-            if (i < 0) {
-              continue;
-            }
-            onPackageUninstalled(packageName, true, userId);
-          }
+          onPackageUninstalled(packageName, true, userId);
         }
         mSettings.removePackage(packageName);
         mComponentResolver.removeAllComponents(ps.pkg);
@@ -690,15 +675,6 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         FileUtils.copyFile(inputStream, apkFile);
       } else {
         apkFile = new File(file);
-      }
-
-      if (option.isFlag(InstallOption.FLAG_XPOSED) && userId != BUserHandle.USER_XPOSED) {
-        return new InstallResult()
-            .installError("Please install the XP module in XP module management");
-      }
-      if (option.isFlag(InstallOption.FLAG_XPOSED)
-          && !XposedParserCompat.isXPModule(apkFile.getAbsolutePath())) {
-        return new InstallResult().installError("not a XP module");
       }
 
       PackageInfo packageArchiveInfo =

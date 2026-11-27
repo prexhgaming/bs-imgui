@@ -7,7 +7,6 @@ import android.os.Parcelable;
 public class InstallOption implements Parcelable {
   public static final int FLAG_SYSTEM = 1;
   public static final int FLAG_STORAGE = 1 << 1;
-  public static final int FLAG_XPOSED = 1 << 2;
   public static final int FLAG_URI_FILE = 1 << 3;
 
   public int flags = 0;
@@ -22,11 +21,6 @@ public class InstallOption implements Parcelable {
     InstallOption installOption = new InstallOption();
     installOption.flags = installOption.flags | FLAG_STORAGE;
     return installOption;
-  }
-
-  public InstallOption makeXposed() {
-    this.flags |= FLAG_XPOSED;
-    return this;
   }
 
   public InstallOption makeUriFile() {

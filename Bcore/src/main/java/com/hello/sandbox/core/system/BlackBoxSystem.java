@@ -16,7 +16,6 @@ import com.hello.sandbox.core.system.notification.BNotificationManagerService;
 import com.hello.sandbox.core.system.os.BStorageManagerService;
 import com.hello.sandbox.core.system.pm.BPackageInstallerService;
 import com.hello.sandbox.core.system.pm.BPackageManagerService;
-import com.hello.sandbox.core.system.pm.BXposedManagerService;
 import com.hello.sandbox.core.system.user.BUserHandle;
 import com.hello.sandbox.core.system.user.BUserManagerService;
 import com.hello.sandbox.entity.pm.InstallOption;
@@ -79,7 +78,6 @@ public class BlackBoxSystem {
     mServices.add(BJobManagerService.get());
     mServices.add(BStorageManagerService.get());
     mServices.add(BPackageInstallerService.get());
-    mServices.add(BXposedManagerService.get());
     mServices.add(BProcessManagerService.get());
     mServices.add(BAccountManagerService.get());
     mServices.add(BLocationManagerService.get());

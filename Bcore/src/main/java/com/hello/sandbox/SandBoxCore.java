@@ -34,14 +34,12 @@ import com.hello.sandbox.core.system.user.BUserHandle;
 import com.hello.sandbox.core.system.user.BUserInfo;
 import com.hello.sandbox.entity.pm.InstallOption;
 import com.hello.sandbox.entity.pm.InstallResult;
-import com.hello.sandbox.entity.pm.InstalledModule;
 import com.hello.sandbox.fake.delegate.ContentProviderDelegate;
 import com.hello.sandbox.fake.frameworks.BActivityManager;
 import com.hello.sandbox.fake.frameworks.BJobManager;
 import com.hello.sandbox.fake.frameworks.BPackageManager;
 import com.hello.sandbox.fake.frameworks.BStorageManager;
 import com.hello.sandbox.fake.frameworks.BUserManager;
-import com.hello.sandbox.fake.frameworks.BXposedManager;
 import com.hello.sandbox.fake.hook.HookManager;
 import com.hello.sandbox.fake.service.api.MetaActivationManager;
 import com.hello.sandbox.proxy.ProxyManifest;
@@ -50,7 +48,6 @@ import com.hello.sandbox.utils.ShellUtils;
 import com.hello.sandbox.utils.Slog;
 import com.hello.sandbox.utils.compat.BuildCompat;
 import com.hello.sandbox.utils.compat.BundleCompat;
-import com.hello.sandbox.utils.compat.XposedParserCompat;
 import com.hello.sandbox.utils.provider.ProviderCall;
 import java.io.File;
 import java.util.ArrayList;
@@ -277,73 +274,12 @@ public class SandBoxCore extends ClientConfiguration {
             apk.toString(), InstallOption.installByStorage().makeUriFile(), userId);
   }
 
-  public InstallResult installXPModule(File apk) {
-    return getBPackageManager()
-        .installPackageAsUser(
-            apk.getAbsolutePath(),
-            InstallOption.installByStorage().makeXposed(),
-            BUserHandle.USER_XPOSED);
-  }
-
-  public InstallResult installXPModule(Uri apk) {
-    return getBPackageManager()
-        .installPackageAsUser(
-            apk.toString(),
-            InstallOption.installByStorage().makeXposed().makeUriFile(),
-            BUserHandle.USER_XPOSED);
-  }
-
-  public InstallResult installXPModule(String packageName) {
-    try {
-      PackageInfo packageInfo = getPackageManager().getPackageInfo(packageName, 0);
-      String path = packageInfo.applicationInfo.sourceDir;
-      return getBPackageManager()
-          .installPackageAsUser(
-              path, InstallOption.installBySystem().makeXposed(), BUserHandle.USER_XPOSED);
-    } catch (PackageManager.NameNotFoundException e) {
-      e.printStackTrace();
-      return new InstallResult().installError(e.getMessage());
-    }
-  }
-
-  public void uninstallXPModule(String packageName) {
-    uninstallPackage(packageName);
-  }
-
-  public boolean isXPEnable() {
-    return BXposedManager.get().isXPEnable();
-  }
-
-  public void setXPEnable(boolean enable) {
-    BXposedManager.get().setXPEnable(enable);
-  }
-
-  public boolean isXposedModule(File file) {
-    return XposedParserCompat.isXPModule(file.getAbsolutePath());
-  }
-
-  public boolean isInstalledXposedModule(String packageName) {
-    return isInstalled(packageName, BUserHandle.USER_XPOSED);
-  }
-
   public boolean isPackageNotInstalled(String packageName) {
     try {
       return getPackageManager().getPackageInfo(packageName, 0) == null;
     } catch (Throwable e) {
       return true;
     }
-  }
-
-  public boolean isModuleEnable(String packageName) {
-    return BXposedManager.get().isModuleEnable(packageName);
-  }
-
-  public void setModuleEnable(String packageName, boolean enable) {
-    BXposedManager.get().setModuleEnable(packageName, enable);
-  }
-
-  public List<InstalledModule> getInstalledXPModules() {
-    return BXposedManager.get().getInstalledModules();
   }
 
   public List<ApplicationInfo> getInstalledApplications(int flags, int userId) {
@@ -442,11 +378,6 @@ public class SandBoxCore extends ClientConfiguration {
   @Override
   public boolean isHideRoot() {
     return mClientConfiguration.isHideRoot();
-  }
-
-  @Override
-  public boolean isHideXposed() {
-    return mClientConfiguration.isHideXposed();
   }
 
   @Override

@@ -9,7 +9,6 @@ import com.hello.sandbox.core.system.location.BLocationManagerService;
 import com.hello.sandbox.core.system.notification.BNotificationManagerService;
 import com.hello.sandbox.core.system.os.BStorageManagerService;
 import com.hello.sandbox.core.system.pm.BPackageManagerService;
-import com.hello.sandbox.core.system.pm.BXposedManagerService;
 import com.hello.sandbox.core.system.user.BUserManagerService;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,7 +21,6 @@ public class ServiceManager {
   public static final String PACKAGE_MANAGER = "package_manager";
   public static final String STORAGE_MANAGER = "storage_manager";
   public static final String USER_MANAGER = "user_manager";
-  public static final String XPOSED_MANAGER = "xposed_manager";
   public static final String ACCOUNT_MANAGER = "account_manager";
   public static final String LOCATION_MANAGER = "location_manager";
   public static final String NOTIFICATION_MANAGER = "notification_manager";
@@ -50,7 +48,6 @@ public class ServiceManager {
     mCaches.put(PACKAGE_MANAGER, BPackageManagerService.get());
     mCaches.put(STORAGE_MANAGER, BStorageManagerService.get());
     mCaches.put(USER_MANAGER, BUserManagerService.get());
-    mCaches.put(XPOSED_MANAGER, BXposedManagerService.get());
     mCaches.put(ACCOUNT_MANAGER, BAccountManagerService.get());
     mCaches.put(LOCATION_MANAGER, BLocationManagerService.get());
     mCaches.put(NOTIFICATION_MANAGER, BNotificationManagerService.get());
@@ -66,7 +63,6 @@ public class ServiceManager {
     SandBoxCore.get().getService(PACKAGE_MANAGER);
     SandBoxCore.get().getService(STORAGE_MANAGER);
     SandBoxCore.get().getService(USER_MANAGER);
-    SandBoxCore.get().getService(XPOSED_MANAGER);
     SandBoxCore.get().getService(ACCOUNT_MANAGER);
     SandBoxCore.get().getService(LOCATION_MANAGER);
     SandBoxCore.get().getService(NOTIFICATION_MANAGER);

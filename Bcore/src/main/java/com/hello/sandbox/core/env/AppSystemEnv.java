@@ -10,7 +10,6 @@ import java.util.List;
 public class AppSystemEnv {
   private static final List<String> sSystemPackages = new ArrayList<>();
   private static final List<String> sSuPackages = new ArrayList<>();
-  private static final List<String> sXposedPackages = new ArrayList<>();
   private static final List<String> sPreInstallPackages = new ArrayList<>();
 
   static {
@@ -43,8 +42,6 @@ public class AppSystemEnv {
     sSuPackages.add("com.thirdparty.superuser");
     sSuPackages.add("com.yellowes.su");
 
-    sXposedPackages.add("de.robv.android.xposed.installer");
-
     // sPreInstallPackages.add("com.huawei.hwid");
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && Build.VERSION.SDK_INT < 29) {
       // 解决Android 9三星浏览器闪退问题
@@ -62,12 +59,9 @@ public class AppSystemEnv {
   }
 
   public static boolean isBlackPackage(String packageName) {
-    if (SandBoxCore.get().isHideRoot() && sSuPackages.contains(packageName)) {
-      return true;
-    } else if (SandBoxCore.get().isHideXposed() && sXposedPackages.contains(packageName)) {
-      return true;
-    }
-    return false;
+    // Only the root-hiding list is left; the Xposed installer list went away with the
+    // Xposed support itself.
+    return SandBoxCore.get().isHideRoot() && sSuPackages.contains(packageName);
   }
 
   public static List<String> getPreInstallPackages() {

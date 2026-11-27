@@ -26,8 +26,6 @@ public class NativeCore {
 
   public static native void addIORule(String targetPath, String relocatePath);
 
-  public static native void hideXposed();
-
   public static native String init_seccomp();
 
   public static void dumpDex(ClassLoader classLoader, String packageName) {

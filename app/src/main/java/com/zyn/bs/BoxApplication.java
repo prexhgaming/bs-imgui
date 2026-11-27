@@ -43,11 +43,6 @@ public class BoxApplication extends Application {
                     return true;
                 }
 
-                @Override
-                public boolean isHideXposed() {
-                    return true;
-                }
-
                 // We never want a background daemon process: it only adds another
                 // process to keep alive and this loader launches on demand.
                 @Override

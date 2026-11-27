@@ -163,7 +163,6 @@ public final class AppInstrumentation extends BaseInstrumentationDelegate implem
       throws InstantiationException, IllegalAccessException, ClassNotFoundException {
     ContextCompat.fix(context);
     fixSharedLibraryLoaders(cl);
-    BActivityThread.currentActivityThread().loadXposed(context);
     delegateAppClassLoader = context.getClassLoader();
     if (RomUtil.isHuawei()) {
       hookHwEnvironment$UserEnvironment();

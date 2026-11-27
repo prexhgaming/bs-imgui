@@ -63,10 +63,8 @@ import com.hello.sandbox.core.env.VirtualRuntime;
 import com.hello.sandbox.core.system.user.BUserHandle;
 import com.hello.sandbox.entity.AppConfig;
 import com.hello.sandbox.entity.am.ReceiverData;
-import com.hello.sandbox.entity.pm.InstalledModule;
 import com.hello.sandbox.fake.delegate.AppInstrumentation;
 import com.hello.sandbox.fake.delegate.ContentProviderDelegate;
-import com.hello.sandbox.fake.frameworks.BXposedManager;
 import com.hello.sandbox.fake.hook.HookManager;
 import com.hello.sandbox.fake.service.HCallbackProxy;
 import com.hello.sandbox.utils.Reflector;
@@ -89,7 +87,6 @@ import java.util.function.Consumer;
 import me.weishu.freereflection.BuildConfig;
 import me.weishu.freereflection.BuildConfig;
 import me.weishu.freereflection.BuildConfig;
-import top.canyie.pine.xposed.PineXposed;
 
 /** Created by Milk on 3/31/21. * ∧＿∧ (`･ω･∥ 丶　つ０ しーＪ 此处无Bug */
 public class BActivityThread extends IBActivityThread.Stub {
@@ -507,43 +504,6 @@ public class BActivityThread extends IBActivityThread.Stub {
     if (installProvider != null) {
       installProvider.setAccessible(true);
       installProvider.invoke(mainThread, context, holder, providerInfo, false, true, true);
-    }
-  }
-
-  public void loadXposed(Context context) {
-    String vPackageName = getAppPackageName();
-    String vProcessName = getAppProcessName();
-    if (!TextUtils.isEmpty(vPackageName)
-        && !TextUtils.isEmpty(vProcessName)
-        && BXposedManager.get().isXPEnable()) {
-      assert vPackageName != null;
-      assert vProcessName != null;
-
-      boolean isFirstApplication = vPackageName.equals(vProcessName);
-
-      List<InstalledModule> installedModules = BXposedManager.get().getInstalledModules();
-      for (InstalledModule installedModule : installedModules) {
-        if (!installedModule.enable) {
-          continue;
-        }
-        try {
-          PineXposed.loadModule(new File(installedModule.getApplication().sourceDir));
-        } catch (Throwable e) {
-          e.printStackTrace();
-        }
-      }
-      try {
-        PineXposed.onPackageLoad(
-            vPackageName,
-            vProcessName,
-            context.getApplicationInfo(),
-            isFirstApplication,
-            context.getClassLoader());
-      } catch (Throwable ignored) {
-      }
-    }
-    if (SandBoxCore.get().isHideXposed()) {
-      NativeCore.hideXposed();
     }
   }
 

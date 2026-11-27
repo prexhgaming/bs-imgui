@@ -50,7 +50,6 @@ dependencies {
     bcoreRuntimeLibs 'com.github.tiann:FreeReflection:3.1.0'
     bcoreRuntimeLibs "com.github.CodingGay.BlackReflection:core:$blackReflection"
     bcoreRuntimeLibs 'top.canyie.pine:core:0.2.9'
-    bcoreRuntimeLibs 'top.canyie.pine:xposed:0.1.0'
 }
 
 tasks.register('bcoreJar') {
