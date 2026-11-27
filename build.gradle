@@ -23,18 +23,18 @@ task clean(type: Delete) {
 }
 
 // ---------------------------------------------------------------------------
-// Distribution: merge the whole sandbox core into one reusable jar.
+// Distribution: pack the whole sandbox core into one reusable jar.
 //
-// The core is four library modules, so a normal build emits four AARs. This task
-// folds their classes (plus the handful of small Maven libs the core needs at
-// runtime) into dist/bcore-all.jar. Drop that into app/libs/ and depend on it
-// instead of :Bcore to skip compiling the core's ~450 Java files.
+// The core is a single library module now, so this just folds its classes (plus
+// the handful of small Maven libs it needs at runtime) into dist/bcore-all.jar.
+// Drop that into app/libs/ and depend on it instead of :Bcore to skip compiling
+// the core's ~450 Java files.
 //
 // What it does NOT contain: libsandbox.so. The CMake build in :Bcore still has
 // to run for the native engine — the jar only saves the Java side. Android
 // framework / AndroidX classes are never bundled either.
 // ---------------------------------------------------------------------------
-def bcoreModules = [':Bcore', ':Bcore:black-fake', ':Bcore:black-hook', ':Bcore:android-mirror']
+def bcoreModules = [':Bcore']
 
 // The core's own runtime dependencies. Kept tiny on purpose: no appcompat, no
 // material, nothing the host app already provides.
@@ -55,7 +55,7 @@ dependencies {
 
 tasks.register('bcoreJar') {
     group = 'distribution'
-    description = 'Merges Bcore + submodules + their small runtime deps into dist/bcore-all.jar'
+    description = 'Packs :Bcore + its small runtime deps into dist/bcore-all.jar'
 
     // The APK is a debug build, so build the core's debug AARs: no second,
     // release-variant compile of the same sources.

@@ -2,7 +2,8 @@
 #
 # The core resolves most of its own classes by NAME at runtime: separate class
 # loaders for guest processes, BlackReflection stubs, AIDL proxies and the
-# android-mirror stubs under the `android.*` / `mirror.*` packages. Renaming any
+# platform stubs / BlackReflection mirrors under the `android.*`, `black.*` and
+# `mirror.*` packages. Renaming any
 # of them breaks the sandbox in ways that only show up at launch, so nothing
 # here may be shrunk or obfuscated.
 

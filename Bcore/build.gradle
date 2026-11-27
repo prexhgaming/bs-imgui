@@ -2,6 +2,19 @@ plugins {
     id 'com.android.library'
 }
 
+// The whole sandbox core, in one module. It used to be four (:Bcore, :Bcore:android-mirror,
+// :Bcore:black-fake, :Bcore:black-hook) that were merged because:
+//   - every class already lived in its final package, so merging changed no source and no import;
+//   - the split forced the cross-module AIDL re-export hack (aidlPackageWhiteList) for a single
+//     import, which a shared aidl source set resolves on its own;
+//   - the "compiler" is an external Maven artifact, not a project module, so it never needed a
+//     module of its own.
+// Packages now living here:
+//   com.hello.sandbox.**        the engine (was :Bcore, plus black-fake's FakeCore)
+//   black.**                    BlackReflection mirrors; the annotation processor below generates
+//                               the BR* helpers from these @BClassName-annotated sources
+//   android.**                  black-fake's platform stubs (deliberately shadowing android.jar)
+//   top.niunaijun.jnihook.**    the JNI-reflection hook (was :Bcore:black-hook)
 android {
 
     compileSdkVersion rootProject.ext.compileSdkVersion
@@ -62,12 +75,14 @@ tasks.withType(Javadoc) {
 dependencies {
     implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    // black-hook used to pull material in; the merged module needs it directly.
+    implementation 'com.google.android.material:material:1.9.0'
 
     implementation 'com.github.tiann:FreeReflection:3.1.0'
     implementation "com.github.CodingGay.BlackReflection:core:$rootProject.ext.blackReflection"
-    implementation project(':Bcore:black-fake')
-    implementation project(':Bcore:black-hook')
-    implementation project(':Bcore:android-mirror')
+    // Generates the BR* mirror classes from the @BClassName-annotated black.** sources above.
+    // Applied in :Bcore:android-mirror before the merge; runs over this whole module now.
+    annotationProcessor "com.github.CodingGay.BlackReflection:compiler:$rootProject.ext.blackReflection"
 
     implementation 'top.canyie.pine:core:0.2.9'
     implementation 'top.canyie.pine:xposed:0.1.0'

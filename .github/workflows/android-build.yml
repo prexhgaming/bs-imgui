@@ -9,8 +9,8 @@ name: Android Build
 # certificate (not the default Android debug key) and installs as an update
 # over an existing install.
 #
-# `bcoreJar` additionally merges the four sandbox-core modules (Bcore,
-# black-fake, black-hook, android-mirror) into dist/bcore-all.jar, which can be
+# `bcoreJar` additionally packs the sandbox core (:Bcore, a single module) into
+# dist/bcore-all.jar, which can be
 # dropped into app/libs/ later to skip compiling the core from scratch.
 #
 # Reporting:
