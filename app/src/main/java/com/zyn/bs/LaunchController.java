@@ -39,7 +39,6 @@ public class LaunchController {
     /** Delay before {@code launchApk}, matching the reference's dialog. */
     private static final long LAUNCH_DELAY_MS = 3000L;
     /** Delay before the native payload hook, matching the reference's ESP start. */
-    private static final long PAYLOAD_DELAY_MS = 10000L;
 
     public enum State {
         IDLE,
@@ -138,7 +137,7 @@ public class LaunchController {
         }, 2000L);
     }
 
-    /** Step 1/3 — launch the sandboxed game, then arm the payload. */
+    /** Step 1/3 — launch the sandboxed game; the guest then loads the payload. */
     private void launchGame() {
         emit(State.LAUNCHING, context.getString(R.string.status_launching));
 
@@ -157,7 +156,10 @@ public class LaunchController {
                 return;
             }
             emit(State.RUNNING, context.getString(R.string.status_running));
-            mainHandler.postDelayed(NativeBridge::load, PAYLOAD_DELAY_MS);
+            // The payload is deliberately NOT armed here. It creates the game's
+            // lifecycle, so it must be loaded in the guest process where that
+            // lifecycle exists — see BoxApplication.GuestPayloadLoader. Loading
+            // it in this process did nothing at all.
         }, LAUNCH_DELAY_MS);
     }
 

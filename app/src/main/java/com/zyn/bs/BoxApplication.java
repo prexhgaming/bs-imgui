@@ -3,80 +3,63 @@ package com.zyn.bs;
 import android.app.Application;
 import android.content.Context;
 import android.util.Log;
-
+import java.io.File;
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration;
 
 /**
- * Host application — attaches the sandbox core before anything else runs.
+ * Loader-side boot. The order and the set of enabled knobs mirror the engine's
+ * own reference host app exactly, because anything the reference enables and we
+ * leave out shows up as "the sandbox is not set up right" at launch time.
  *
- * <p>The engine is BlackBox Reborn ({@code top.niunaijun.blackbox}), which has a
- * slightly wider boot contract than the previous core. The order below is the
- * one its own host app uses and must be kept:</p>
- *
- * <ol>
- *   <li>{@link BlackBoxCore#onBeforeMainApplicationAttach} — lets callbacks see
- *       the host Application before the core rewires it;</li>
- *   <li>{@link BlackBoxCore#doAttachBaseContext} — unseals the hidden-API
- *       reflection, picks the process type and installs the hooks;</li>
- *   <li>{@link BlackBoxCore#onAfterMainApplicationAttach} — the matching
- *       "after" notification;</li>
- *   <li>{@link BlackBoxCore#doCreate} in {@code onCreate} — finishes the
- *       content-provider and service wiring.</li>
- * </ol>
- *
- * <p>There is deliberately no activation call: the core carries no licence gate
- * and activates itself inside {@code doAttachBaseContext}.</p>
- *
- * <p>There is also deliberately <em>no</em> background warm-up. An earlier
- * version kicked off {@code BlackBoxSystem.startup()} on its own thread to
- * overlap the package scan with process start-up, but that raced the core's own
- * initialisation and made a tap-to-launch return immediately instead of
- * starting the game. The core initialises itself on first use; nothing here may
- * start it early.</p>
+ * <p>Boot sequence, same as the reference: {@code closeCodeInit()} →
+ * {@code onBeforeMainApplicationAttach()} → {@code doAttachBaseContext()} →
+ * {@code onAfterMainApplicationAttach()}, then {@code doCreate()} plus the
+ * service-availability callback in {@code onCreate()}.</p>
  */
 public class BoxApplication extends Application {
 
     private static final String TAG = "BoxApplication";
 
+    /** Package name of the loader itself, needed by ClientConfiguration. */
+    private static volatile String sHostPackage;
+
     @Override
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
+        sHostPackage = base.getPackageName();
+
+        // 1. Same first step as the reference loader.
+        try {
+            BlackBoxCore.get().closeCodeInit();
+        } catch (Throwable t) {
+            Log.e(TAG, "closeCodeInit failed", t);
+        }
+        // 2. Before the main application is attached.
         try {
             BlackBoxCore.get().onBeforeMainApplicationAttach(this, base);
-
-            BlackBoxCore.get().doAttachBaseContext(base, new ClientConfiguration() {
-                @Override
-                public String getHostPackageName() {
-                    return base.getPackageName();
-                }
-
-                @Override
-                public boolean isHideRoot() {
-                    return true;
-                }
-
-                // We never want a background daemon process: it only adds another
-                // process to keep alive and this loader launches on demand.
-                @Override
-                public boolean isEnableDaemonService() {
-                    return false;
-                }
-
-                // NOTE: isEnableLauncherActivity() is deliberately NOT overridden.
-                // It does not mean "show a launcher UI for virtual apps" — it
-                // selects the launch path in BlackBoxCore.startActivity():
-                // true  -> LauncherActivity.launch(intent, userId)  (correct)
-                // false -> getBActivityManager().startActivity(...) (wrong here)
-                // Overriding it to false makes launchApk() return true while the
-                // game is never actually brought up. Leave it at the default.
-            });
-
+        } catch (Throwable t) {
+            Log.e(TAG, "onBeforeMainApplicationAttach failed", t);
+        }
+        // 3. Hand the core our ClientConfiguration.
+        try {
+            BlackBoxCore.get().doAttachBaseContext(base, new LoaderConfiguration());
+        } catch (Throwable t) {
+            Log.e(TAG, "doAttachBaseContext failed", t);
+        }
+        // 4. After the main application is attached.
+        try {
             BlackBoxCore.get().onAfterMainApplicationAttach(this, base);
         } catch (Throwable t) {
-            // A broken core must not make the loader unlaunchable — the UI can
-            // still show the game and explain the failure.
-            Log.e(TAG, "core attach failed", t);
+            Log.e(TAG, "onAfterMainApplicationAttach failed", t);
+        }
+        // 5. Register the guest-side hook that loads the payload in the process
+        //    the game actually runs in.
+        try {
+            BlackBoxCore.get().addAppLifecycleCallback(new GuestPayloadLoader());
+        } catch (Throwable t) {
+            Log.e(TAG, "addAppLifecycleCallback failed", t);
         }
     }
 
@@ -86,7 +69,72 @@ public class BoxApplication extends Application {
         try {
             BlackBoxCore.get().doCreate();
         } catch (Throwable t) {
-            Log.e(TAG, "core create failed", t);
+            Log.e(TAG, "doCreate failed", t);
+        }
+        try {
+            BlackBoxCore.get()
+                    .addServiceAvailableCallback(
+                            () -> Log.i(TAG, "sandbox services available"));
+        } catch (Throwable t) {
+            Log.e(TAG, "addServiceAvailableCallback failed", t);
+        }
+    }
+
+    /**
+     * Runs inside the virtual app's own process. This is the only place where
+     * loading {@code libzyn-bs.so} can have an effect: the library creates the
+     * game's lifecycle, and that lifecycle lives here.
+     */
+    private static final class GuestPayloadLoader extends AppLifecycleCallback {
+
+        @Override
+        public void beforeApplicationOnCreate(
+                String packageName, String processName, Application application, int userId) {
+            if (!GameConfig.PACKAGE_NAME.equals(packageName)) {
+                return;
+            }
+            Log.i(TAG, "guest " + processName + " for " + packageName + " -> loading payload");
+            NativeBridge.loadInGuestProcess();
+        }
+    }
+
+    /**
+     * Same overrides the reference host app exposes. Note what is deliberately
+     * absent: {@code isEnableLauncherActivity} is NOT overridden. It does not
+     * mean "no launcher UI" — {@code BlackBoxCore.startActivity()} uses it to
+     * choose the launch path, and forcing it false makes {@code launchApk()}
+     * report success while never bringing the game up.
+     */
+    private static final class LoaderConfiguration extends ClientConfiguration {
+
+        @Override
+        public String getHostPackageName() {
+            return sHostPackage;
+        }
+
+        @Override
+        public boolean isHideRoot() {
+            return true;
+        }
+
+        @Override
+        public boolean isEnableDaemonService() {
+            return false;
+        }
+
+        @Override
+        public boolean isUseVpnNetwork() {
+            return false;
+        }
+
+        @Override
+        public boolean isDisableFlagSecure() {
+            return false;
+        }
+
+        @Override
+        public boolean requestInstallPackage(File file, int userId) {
+            return false;
         }
     }
 }
