@@ -223,8 +223,7 @@ public class FileUtils {
         FileOutputStream outputStream = null;
         try {
             outputStream = new FileOutputStream(target);
-            // 64 KiB rather than 4 KB: this path is used for APK payloads too.
-            byte[] data = new byte[1 << 16];
+            byte[] data = new byte[4096];
             int len;
             while ((len = inputStream.read(data)) != -1) {
                 outputStream.write(data, 0, len);
@@ -247,31 +246,15 @@ public class FileUtils {
             FileChannel iChannel = inputStream.getChannel();
             FileChannel oChannel = outputStream.getChannel();
 
-            // Fast path: let the kernel move the bytes (on Android this is
-            // often a single splice). It matters because this copy is what
-            // pushes multi-hundred-MB APKs into the sandbox.
-            long size = iChannel.size();
-            long position = 0;
-            while (position < size) {
-                long moved = iChannel.transferTo(position, size - position, oChannel);
-                if (moved <= 0) {
+            ByteBuffer buffer = ByteBuffer.allocate(1024);
+            while (true) {
+                buffer.clear();
+                int r = iChannel.read(buffer);
+                if (r == -1)
                     break;
-                }
-                position += moved;
-            }
-
-            // Finish off whatever transferTo could not move (a short read, or a
-            // file that grew meanwhile) with a large buffer. The old version
-            // looped this path 1 KB at a time.
-            if (position < iChannel.size()) {
-                iChannel.position(position);
-                ByteBuffer buffer = ByteBuffer.allocate(1 << 16);
-                int read;
-                while ((read = iChannel.read(buffer)) > 0) {
-                    buffer.flip();
-                    oChannel.write(buffer);
-                    buffer.clear();
-                }
+                buffer.limit(buffer.position());
+                buffer.position(0);
+                oChannel.write(buffer);
             }
         } finally {
             closeQuietly(inputStream);

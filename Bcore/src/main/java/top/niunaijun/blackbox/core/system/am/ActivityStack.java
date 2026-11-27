@@ -18,6 +18,8 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.util.Log;
 
+import java.io.File;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -46,7 +48,60 @@ import static android.content.pm.PackageManager.GET_ACTIVITIES;
 
 @SuppressWarnings({"deprecation", "unchecked"})
 public class ActivityStack {
-    public static final String TAG = "ActivityStack";
+    private static final String TAG = "ActivityStack";
+
+    /**
+     * Companion-first guide map (WhatsApp edition): SMS registration entry
+     * activities -> the companion-mode (QR) entry. Consulted directly by the
+     * engine so the redirect also works in the AMS/daemon process, where the
+     * host ClientConfiguration object is NOT attached (only the host prefs
+     * file is readable - both run under the same app uid).
+     */
+    private static final Map<String, String> COMPANION_REDIRECT = new HashMap<>();
+
+    static {
+        COMPANION_REDIRECT.put("com.whatsapp.registration.app.phonenumberentry.RegisterPhone",
+                "com.whatsapp.companionmode.registration.ui.RegisterAsCompanionActivity");
+        COMPANION_REDIRECT.put("com.whatsapp.registration.app.verifyphone.VerifyPhoneNumber",
+                "com.whatsapp.companionmode.registration.ui.RegisterAsCompanionActivity");
+    }
+
+    private static final String ACCOUNT_MARKER = "companion_registered_";
+
+    /** Redirect helper: null when toggle off, class not guarded, or clone has an account. */
+    private String getCompanionRedirectSafely(ActivityInfo activityInfo, int userId) {
+        try {
+            if (activityInfo.name == null) return null;
+            String redirect = COMPANION_REDIRECT.get(activityInfo.name);
+            if (redirect == null) return null;
+            // user toggle (read live from the host app's prefs file - same uid)
+            boolean guideOn = top.niunaijun.blackbox.BlackBoxCore.getContext()
+                    .getSharedPreferences("AppSharedPreferenceDelegate", Context.MODE_PRIVATE)
+                    .getBoolean("mLinkDeviceGuide", true);
+            if (!guideOn) return null;
+            // never hijack a clone that has ever reached its main screen
+            File marker = new File(top.niunaijun.blackbox.core.env.BEnvironment.getAppDir(activityInfo.packageName),
+                    ACCOUNT_MARKER + userId);
+            if (marker.exists()) return null;
+            return redirect;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * Records clones that have ever been on the main screen (i.e. have an
+     * account flow OR completed registration) - those never get rerouted.
+     */
+    private static void markAccountClone(int userId, String packageName) {
+        try {
+            File marker = new File(top.niunaijun.blackbox.core.env.BEnvironment.getAppDir(packageName),
+                    ACCOUNT_MARKER + userId);
+            if (!marker.exists()) marker.createNewFile();
+        } catch (Throwable t) {
+            //
+        }
+    }
 
     private final ActivityManager mAms;
     private final Map<Integer, TaskRecord> mTasks = new LinkedHashMap<>();
@@ -105,6 +160,24 @@ public class ActivityStack {
         Log.d(TAG, "startActivityLocked : " + resolveInfo.activityInfo);
         ActivityInfo activityInfo = resolveInfo.activityInfo;
 
+        // Companion-first guide: while the sandboxed clone has no account data,
+        // reroute SMS/phone-number registration starts to the companion (QR)
+        // entry configured by the host app. Cheap no-op when data exists.
+        if (activityInfo != null) {
+            String redirectClass = getCompanionRedirectSafely(activityInfo, userId);
+            if (redirectClass != null) {
+                Log.i(TAG, "companion-first: rerouting " + activityInfo.name + " -> " + redirectClass);
+                intent.setClassName(activityInfo.packageName, redirectClass);
+                intent.removeExtra(Intent.EXTRA_INTENT);
+                ResolveInfo redirected = BPackageManagerService.get().resolveActivity(intent, GET_ACTIVITIES, resolvedType, userId);
+                if (redirected != null && redirected.activityInfo != null) {
+                    activityInfo = redirected.activityInfo;
+                } else {
+                    Log.w(TAG, "companion-first: redirect target unresolvable, keeping original");
+                }
+            }
+        }
+
         ActivityRecord sourceRecord = findActivityRecordByToken(userId, resultTo);
         if (sourceRecord == null) {
             resultTo = null;
@@ -138,6 +211,21 @@ public class ActivityStack {
         }
 
         
+        if (taskRecord == null || taskRecord.needNewTask()) {
+            // Single-window mode: before spawning yet another standalone task,
+            // try to reuse the most recent live task of the same user+package
+            // (any affinity). This keeps ONE active window per sandboxed app
+            // like a native launcher launch would, instead of stacking
+            // recents tiles when an app re-launches or its affinity task
+            // expired/DIFFERING (e.g. singleInstance components).
+            if (BlackBoxCore.get().isSingleWindowMode()) {
+                TaskRecord pkgTask = findLatestLiveTaskByPackageLocked(userId, activityInfo.packageName);
+                if (pkgTask != null) {
+                    taskRecord = pkgTask;
+                }
+            }
+        }
+
         if (taskRecord == null || taskRecord.needNewTask()) {
             return startActivityInNewTaskLocked(userId, intent, activityInfo, resultTo, launchModeFlags);
         }
@@ -330,6 +418,30 @@ public class ActivityStack {
         return tasks.get(tasks.size() - 1).getTopActivityRecord();
     }
 
+    /**
+     * Singles-window support: find the newest task that still has live
+     * (not finished) activities for the given user/package, regardless of
+     * task affinity.
+     */
+    private TaskRecord findLatestLiveTaskByPackageLocked(int userId, String packageName) {
+        synchronized (mTasks) {
+            synchronizeTasks();
+        }
+        TaskRecord best = null;
+        for (TaskRecord task : mTasks.values()) {
+            if (task.needNewTask() || task.userId != userId)
+                continue;
+            ActivityRecord top = task.getTopActivityRecord();
+            if (top == null || top.component == null)
+                continue;
+            if (!packageName.equals(top.component.getPackageName()))
+                continue;
+            if (best == null || task.id > best.id)
+                best = task;
+        }
+        return best;
+    }
+
     private Intent getStartStubActivityIntentInner(Intent intent, int vpid,
                                                    int userId, ProxyActivityRecord target,
                                                    ActivityInfo activityInfo) {
@@ -467,6 +579,12 @@ public class ActivityStack {
             record.task = taskRecord;
             taskRecord.addTopActivity(record);
             Log.d(TAG, "onActivityCreated : " + record.component.toString());
+            // account-state marker: whenever the clone reaches its MAIN screen,
+            // never reroute its registration screens afterwards
+            if (record.component != null
+                    && "com.whatsapp.home.ui.HomeActivity".equals(record.component.getClassName())) {
+                markAccountClone(record.userId, "com.whatsapp");
+            }
         }
     }
 

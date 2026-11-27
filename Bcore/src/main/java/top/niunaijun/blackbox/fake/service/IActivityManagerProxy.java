@@ -216,6 +216,24 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
+    /**
+     * WhatsApp edition: the app shell delegate calls
+     * ActivityManager.clearApplicationUserData() during makeApplication when
+     * it decides to reset its own state (companion-provisioned clones hit
+     * this). In the sandbox the real call is not allowed (SecurityException
+     * -> catch-all returned null -> NPE unboxing 'boolean' -> fatal in
+     * handleBindApplication). A clone must NEVER be able to wipe its own
+     * sandbox data through this path anyway, so: fake a primitive 'true'.
+     */
+    @ProxyMethod("clearApplicationUserData")
+    public static class ClearApplicationUserData extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Slog.w(TAG, "clearApplicationUserData: faking success (sandbox protection)");
+            return true;
+        }
+    }
+
     @ProxyMethod("startService")
     public static class StartService extends MethodHook {
         @Override
@@ -343,32 +361,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             Intent intent = (Intent) args[2];
             String resolvedType = (String) args[3];
             IServiceConnection connection = (IServiceConnection) args[4];
-
-            // Phase 2 / Fix 10: For Play Integrity service binds, wrap the IServiceConnection
-            // so ServiceConnectionDelegate.connected() intercepts when the service connects.
-            // The wrapped connected() will proxy the IBinder to bridge nonces → WaEnhancer.
-            if (intent != null) {
-                ComponentName comp = intent.getComponent();
-                String action  = intent.getAction();
-                boolean isIntegrity =
-                    (comp != null && (
-                        "com.google.android.finsky.expressintegrityservice.ExpressIntegrityService"
-                            .equals(comp.getClassName()) ||
-                        comp.getClassName().contains("IntegrityService") ||
-                        comp.getClassName().contains("expressintegrity"))) ||
-                    (action != null && (
-                        action.contains("expressintegrityservice") ||
-                        action.contains("IntegrityService")));
-                if (isIntegrity && connection != null) {
-                    Slog.d(TAG, "Phase 2: Wrapping integrity service connection for bridge");
-                    IServiceConnection proxy =
-                        top.niunaijun.blackbox.hooks.IntegrityProxy.createConnectionProxy(
-                            connection, intent);
-                    args[4] = proxy;
-                    args[callingPackageIndex] = BlackBoxCore.getHostPkg();
-                    return method.invoke(who, args);
-                }
-            }
 
             
             if (intent == null) {

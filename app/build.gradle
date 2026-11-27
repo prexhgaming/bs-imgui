@@ -106,9 +106,9 @@ android {
     }
 
     compileOptions {
-        // 17 to match :Bcore and :black-reflection, which are both built at 17.
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        // 21 to match :Bcore, which upstream compiles at 21 (JDK 21 in CI).
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
 
     packagingOptions {

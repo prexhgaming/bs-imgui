@@ -51,6 +51,9 @@ env:
   # Must match ndkVersion in app/build.gradle.
   # r26+ is required: Application.mk sets APP_SUPPORT_FLEXIBLE_PAGE_SIZES.
   NDK_VERSION: 27.0.12077973
+  # Bcore pins its own NDK in Bcore/build.gradle (upstream's choice); both must
+  # be installed. The payload deliberately keeps the NDK it was proven with.
+  ENGINE_NDK_VERSION: 29.0.13846066
   # Must match the AGP 8.13.2 / compileSdk 36 toolchain the core expects.
   GRADLE_VERSION: '8.14.5'
   LOG_FILE: build.log
@@ -97,7 +100,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -116,6 +119,7 @@ jobs:
           # ndk-build projects now. compileSdk 36 needs platform + build-tools 36.
           "$SDKMANAGER" --install \
             "ndk;${NDK_VERSION}" \
+            "ndk;${ENGINE_NDK_VERSION}" \
             "platforms;android-36" \
             "build-tools;36.1.0"
           echo "NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${NDK_VERSION}"
