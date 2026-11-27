@@ -115,7 +115,7 @@ jobs:
           } | tee "$LOG_FILE"
 
           gradle assembleDebug assembleRelease \
-            --no-daemon --stacktrace 2>&1 | tee -a "$LOG_FILE"
+            --no-daemon 2>&1 | tee -a "$LOG_FILE"
 
       # Fails loudly if the release APK came out unsigned, instead of shipping a
       # useless artifact when the signing config was not picked up.

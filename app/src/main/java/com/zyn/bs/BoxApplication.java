@@ -2,7 +2,6 @@ package com.zyn.bs;
 
 import android.app.Application;
 import android.content.Context;
-import android.content.pm.PackageInfo;
 import android.util.Log;
 
 import java.io.File;
@@ -49,11 +48,10 @@ public class BoxApplication extends Application {
                 }
 
                 @Override
-                public boolean requestInstallPackage(File file) {
-                    // Same behaviour as the reference: report the archive but
+                public boolean requestInstallPackage(File file, int userId) {
+                    // Same behaviour as the reference: inspect the archive but
                     // let bcore perform the install itself.
-                    PackageInfo ignored = base.getPackageManager()
-                            .getPackageArchiveInfo(file.getAbsolutePath(), 0);
+                    base.getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), 0);
                     return false;
                 }
             });

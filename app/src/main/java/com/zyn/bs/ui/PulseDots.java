@@ -1,7 +1,6 @@
 package com.zyn.bs.ui;
 
 import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
 import android.content.Context;
@@ -111,16 +110,5 @@ public class PulseDots extends LinearLayout {
     protected void onDetachedFromWindow() {
         stop();
         super.onDetachedFromWindow();
-    }
-
-    /** Convenience for callers that only have a {@link Runnable}-style hook. */
-    public void fadeIn() {
-        setAlpha(0f);
-        animate().alpha(1f).setDuration(220L).setListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                setListener(null);
-            }
-        }).start();
     }
 }
