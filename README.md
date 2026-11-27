@@ -47,11 +47,17 @@ listing for that package.
 Gradle drives `ndk-build` itself, so a single command builds the Java app *and* the native payload:
 
 ```bash
-gradle assembleDebug assembleRelease
+gradle assembleDebug
 ```
 
-Requires JDK 17, Android SDK 34, and NDK `27.0.12077973` (r26+). The release APK is signed from
-`signing.properties` + the `.jks` at the project root; without them it is built unsigned.
+Requires JDK 17, Android SDK 34, and NDK `27.0.12077973` (r26+). The APK is signed from
+`signing.properties` + the `.jks` at the project root — including the debug build type, so it is
+signed with the project key rather than the default Android debug key. Without those files it falls
+back to the default debug key.
+
+`targetSdk` is pinned to **28** on purpose: bcore's reflected platform APIs are the pre-29 ones.
+The `ExpiredTargetSdkVersion` lint check is disabled for that reason — this is a sideloaded app, not
+a Play Store submission.
 
 ## Encrypted assets
 

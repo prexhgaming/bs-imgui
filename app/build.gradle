@@ -67,6 +67,12 @@ android {
         debug {
             debuggable true
             minifyEnabled false
+            // Sign debug builds with OUR key, not the default debug keystore.
+            // Same signature as release means a debug build installs as an
+            // update over an existing install instead of conflicting with it.
+            if (hasSigning) {
+                signingConfig signingConfigs.release
+            }
         }
         release {
             debuggable false
@@ -79,6 +85,16 @@ android {
                 signingConfig signingConfigs.release
             }
         }
+    }
+
+    lint {
+        // bcore only behaves on targetSdk 28 (its reflected platform APIs are
+        // the pre-29 ones), so "Google Play requires targetSdk 31+" is expected
+        // here and must not fail the build. This is a sideloaded app, not a
+        // Play Store submission.
+        disable 'ExpiredTargetSdkVersion'
+        checkReleaseBuilds false
+        abortOnError false
     }
 
     compileOptions {

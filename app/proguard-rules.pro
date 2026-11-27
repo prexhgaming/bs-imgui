@@ -12,6 +12,12 @@
 -keep class top.niunaijun.blackbox.** { *; }
 -dontwarn top.niunaijun.blackbox.**
 
+# The blackreflection library is not bundled in the AAR; bcore's generated
+# reflection stubs reference it. Without these rules R8 fails the release build
+# with "Missing class top.niunaijun.blackreflection...".
+-dontwarn top.niunaijun.blackreflection.**
+-dontwarn black.**
+
 # ---------------------------------------------------------------------------
 # JNI — native methods are resolved by their Java name, which must not change.
 # ---------------------------------------------------------------------------

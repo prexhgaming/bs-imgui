@@ -4,9 +4,14 @@ name: Android Build
 # (app/src/main/jni/Android.mk), so the native lib is compiled as part of the
 # normal app build.
 #
+# Only `assembleDebug` is built: the debug build type is configured to use the
+# release signing key, so the artifact is a debuggable APK signed with OUR
+# certificate (not the default Android debug key) and installs as an update
+# over an existing install.
+#
 # Reporting:
 #   - failure -> the full build log (build.log) to Telegram
-#   - success -> the signed release APK to Telegram
+#   - success -> the signed APK to Telegram
 on:
   push:
     branches: [main]
@@ -59,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${KEYSTORE_B64:-}" ] || [ -z "${SIGNING_PROPS_B64:-}" ]; then
-            echo "::warning::Signing secrets missing (fork PR?) - release APK will be unsigned"
+            echo "::warning::Signing secrets missing (fork PR?) - APK will use the default debug key"
             exit 0
           fi
 
@@ -114,19 +119,19 @@ jobs:
             echo
           } | tee "$LOG_FILE"
 
-          gradle assembleDebug assembleRelease \
+          gradle assembleDebug \
             --no-daemon 2>&1 | tee -a "$LOG_FILE"
 
-      # Fails loudly if the release APK came out unsigned, instead of shipping a
-      # useless artifact when the signing config was not picked up.
-      - name: Verify release APK is signed
+      # Fails loudly if the APK came out with the default debug key instead of
+      # ours, instead of shipping something that cannot update a real install.
+      - name: Verify APK is signed
         id: verify
         if: success()
         run: |
           set -euo pipefail
-          apk="$(find app/build/outputs/apk/release -name '*.apk' | head -n1)"
+          apk="$(find app/build/outputs/apk/debug -name '*.apk' | head -n1)"
           if [ -z "$apk" ]; then
-            echo "::error::No release APK produced"
+            echo "::error::No debug APK produced"
             exit 1
           fi
 
@@ -137,7 +142,17 @@ jobs:
 
           "$APKSIGNER" verify --verbose --print-certs "$apk"
 
-          # Ship it under a stable, versioned name rather than app-release.apk.
+          # The whole point of wiring signing.properties into the debug build
+          # type: the APK must carry OUR certificate, not the default
+          # "CN=Android Debug" one that ~/.android/debug.keystore produces.
+          CERTS="$("$APKSIGNER" verify --print-certs "$apk")"
+          if printf '%s' "$CERTS" | grep -q 'CN=Android Debug'; then
+            echo "::error::$apk is signed with the default Android debug key"
+            exit 1
+          fi
+          printf '%s\n' "$CERTS" | grep 'certificate DN'
+
+          # Ship it under a stable, versioned name rather than app-debug.apk.
           # sed (not grep -P) so this also works with BusyBox grep.
           VERSION="$(sed -n "s/.*versionName[[:space:]]*'\([^']*\)'.*/\1/p" app/build.gradle | head -n1)"
           APK_OUT="dist/bskiller-${VERSION:-0.0.0}-${GITHUB_RUN_NUMBER}.apk"

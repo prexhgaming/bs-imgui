@@ -20,7 +20,7 @@
 
 ## Building
 - Gradle drives ndk-build itself via `externalNativeBuild.ndkBuild`, so **one command builds everything**:
-  `gradle assembleDebug assembleRelease`
+  `gradle assembleDebug` (CI builds debug only).
 - No `gradlew` in the repo — the wrapper jar isn't committed. CI gets `gradle` from
   `gradle/actions/setup-gradle@v3` (`GRADLE_VERSION: 8.5`). Run `gradle wrapper` locally to generate one.
 - `ndkVersion` in `app/build.gradle` must match `env.NDK_VERSION` in the workflow (currently `27.0.12077973`).
@@ -30,12 +30,20 @@
 - `app/src/main/jni/Dobby/libraries/*/libdobby.a` are prebuilt and **must stay committed** — `.gitignore`
   has an explicit `!` negation for them (it ignores `*.a` generally).
 - Build outputs `app/src/main/jni/libs/` and `app/src/main/jni/obj/` are git-ignored.
+- **`targetSdk` must stay 28** — bcore's reflected platform APIs are the pre-29 ones and break on
+  newer targets. The `ExpiredTargetSdkVersion` lint check is therefore disabled in `app/build.gradle`
+  (`lint { disable ... ; checkReleaseBuilds false; abortOnError false }`); this is a sideloaded app,
+  not a Play Store submission.
 
-## Release signing
+## Signing
 - `signing.properties` + the `.jks` live at the **project root** (Gradle resolves `storeFile` relative to it).
 - Both are git-ignored (`*.jks`, `signing.properties`) — never commit them.
 - CI recreates them from base64 secrets `KEYSTORE_BASE64` and `SIGNING_PROPERTIES_BASE64`.
-- When they're absent (forks/local), the release APK is built **unsigned** instead of failing.
+- **The `debug` build type uses the release signing config too**, so `assembleDebug` produces an APK
+  signed with our certificate rather than the default `CN=Android Debug` key — it installs as an
+  update over an existing install instead of conflicting.
+- When the signing files are absent (forks/local), debug falls back to the default debug key and
+  release is left unsigned, instead of failing the build.
 
 ## Encrypted assets
 - Assets are AES-256-GCM encrypted; nothing readable ships in the APK.
@@ -45,8 +53,9 @@
 - Verify the shipped asset against the runtime key with `.polydev/verify_asset.py`.
 
 ## CI: .github/workflows/android-build.yml
-- Decodes signing material → installs NDK → `gradle assembleDebug assembleRelease` piped through `tee` to `build.log`.
-- Verifies the release APK with `apksigner verify` (fails the build if unsigned).
+- Decodes signing material → installs NDK → `gradle assembleDebug` piped through `tee` to `build.log`.
+- Verifies the APK with `apksigner verify` and **fails if it carries the default `CN=Android Debug`
+  certificate** instead of ours.
 - Telegram report: **failure** → sends `build.log`; **success** → sends the signed APK
   (`dist/bskiller-<versionName>-<run_number>.apk`).
 - Logs and APKs are also kept as a build artifact (`loader-<run_number>`, 14 days).
