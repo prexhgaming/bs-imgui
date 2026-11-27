@@ -7,4 +7,6 @@
 
 ## Repo conventions
 - Default branch is `main`.
+- Visibility is **public** (switched from private to get free GitHub Actions minutes after the private quota ran out). Actions enabled with `allowed_actions: all`.
+- Never commit secrets — the repo is publicly readable. Use Actions secrets instead (`.env*` is git-ignored).
 - `.polydev/` is git-ignored (local agent tooling, not part of the project).
