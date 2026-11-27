@@ -50,8 +50,9 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
 ## Building
 - **Two native builds, both ndk-build, both driven by Gradle:** `externalNativeBuild.ndkBuild` for the
   payload and for the engine. **There is no CMake anywhere** — do not install or wire CMake back in.
-- **One command builds everything:** `gradle assembleDebug` (CI builds debug only).
-- `gradle assembleDebug bcoreJar` additionally emits `dist/bcore-all.jar` (see "Reusing the core jar").
+- **One command builds everything:** `gradle assembleRelease` (CI builds release only — see
+  "Minify, shrink and keep rules" for why release and not debug).
+- `gradle assembleRelease bcoreJar` additionally emits `dist/bcore-all.jar` (see "Reusing the core jar").
 - Toolchain (keep `app`, `Bcore` and CI in sync): **AGP 8.13.2**, Gradle **8.14.5** (CI's
   `GRADLE_VERSION`), `compileSdk 36`, `buildToolsVersion 36.1.0`, **Java 17**, `minSdk 24`,
   `targetSdk 28`. `compileSdk` must stay 36: the engine's AAR metadata pins `minCompileSdk 36`, so a
@@ -83,7 +84,8 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
   `onAfterMainApplicationAttach(this, base)` from `attachBaseContext`, then `doCreate()` from
   `onCreate`. Each block is wrapped in `catch (Throwable)` so a broken engine can't make the loader
   unlaunchable. `ClientConfiguration` needs `getHostPackageName()` (abstract); this app also
-  overrides `isHideRoot` (true), `isEnableDaemonService` (false) and `isEnableLauncherActivity` (false).
+  overrides `isHideRoot` (true) and `isEnableDaemonService` (false). **Do not override
+  `isEnableLauncherActivity`** — see the pitfall below.
 - **There is deliberately no warm-up and no early startup.** An earlier version started the engine's
   package scan on a background thread to overlap process start-up; that raced the engine's own
   initialisation and made a tap-to-launch return immediately instead of starting the game. The engine
@@ -102,6 +104,12 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
 - **R8 + resource shrinking are ON for the debug build type as well as release**, because debug is
   what CI ships and signs (`minifyEnabled true`, `shrinkResources true`,
   `proguard-android-optimize.txt`).
+- **But AGP disables R8 obfuscation and optimisation for `debuggable` builds.** The shipped debug APK
+  is therefore *shrunk but not renamed*, and the build log says so:
+  `WARNING: BuildType 'debug' is both debuggable and has 'isMinifyEnabled' set to true. All code
+  optimizations and obfuscation are disabled for debuggable builds.` Class-renaming only happens in a
+  non-debuggable build (the `release` variant). No proguard rule can re-enable it — there is no
+  inverse of the `-dontobfuscate` that AGP injects.
 - `Bcore/consumer-rules.pro` is the important half: AGP merges it into the app automatically. It keeps
   everything the engine resolves **by name at runtime** — `top.niunaijun.blackbox.**` (including the
   `proxy.**` pool, whose `:p0`…`:p99` components are named from the merged manifest),
@@ -127,6 +135,16 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
   and the payload statically links Dobby into `libzyn-bs.so`. Two copies initialising in one process
   fight over the same hook slots, which is the prime suspect for random crashes while hooking. If that
   shows up, make exactly one of them own Dobby.
+- **Never set `isEnableLauncherActivity()` to false — that was the "the game never starts" bug.**
+  The name is misleading: it does not mean "show a launcher UI for virtual apps". `BlackBoxCore.startActivity()`
+  uses it to pick the launch path — `true` → `LauncherActivity.launch(intent, userId)` (the engine's
+  splash+launch proxy, the correct one), `false` → `getBActivityManager().startActivity(...)` directly.
+  With `false`, `launchApk()` still **returns true** and the game never comes up, with no error anywhere.
+  Leave it at the default (`true`).
+- **`closeCodeInit()` is optional and inert for us.** It registers an `AppLifecycleCallback` that loads
+  `inject.so` for the hardcoded package `com.whatever` (see `closecode/Entry.java`), so it does nothing
+  for `com.netease.newspike`. The reference app calls it; we deliberately don't. Everything else in the
+  reference's `attachBaseContext` order we do match.
 - **`targetSdk` must stay 28** — the engine's reflected platform APIs are the pre-29 ones. The
   `ExpiredTargetSdkVersion` lint check is therefore disabled in `app/build.gradle`; this is a
   sideloaded app, not a Play Store submission.
@@ -163,7 +181,10 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
 
 ## CI: .github/workflows/android-build.yml
 - Decodes signing material → installs NDK **27.0.12077973** and SDK platform/build-tools **36** (no
-  CMake) → `gradle assembleDebug bcoreJar` piped through `tee` to `build.log`.
+  CMake) → `gradle assembleRelease bcoreJar` piped through `tee` to `build.log`.
+- Ships the **release** APK (`dist/bskiller-<versionName>-<run_number>.apk`), signed with our key. On
+  fork PRs (no secrets) the release APK is unsigned; the cert assertions are then skipped with a
+  warning instead of failing the build.
 - Verifies the APK with `apksigner verify` and **fails if it carries the default `CN=Android Debug`
   certificate** instead of ours.
 - **Fails if either native lib is missing** — `lib/armeabi-v7a/libzyn-bs.so` or `libblackbox.so`.

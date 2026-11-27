@@ -63,11 +63,13 @@ public class BoxApplication extends Application {
                     return false;
                 }
 
-                // No sandbox launcher/UI inside virtual apps.
-                @Override
-                public boolean isEnableLauncherActivity() {
-                    return false;
-                }
+                // NOTE: isEnableLauncherActivity() is deliberately NOT overridden.
+                // It does not mean "show a launcher UI for virtual apps" — it
+                // selects the launch path in BlackBoxCore.startActivity():
+                // true  -> LauncherActivity.launch(intent, userId)  (correct)
+                // false -> getBActivityManager().startActivity(...) (wrong here)
+                // Overriding it to false makes launchApk() return true while the
+                // game is never actually brought up. Leave it at the default.
             });
 
             BlackBoxCore.get().onAfterMainApplicationAttach(this, base);
