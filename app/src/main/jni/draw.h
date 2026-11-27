@@ -242,6 +242,7 @@ void SetDefaultConfig() {
     sync_bool["bWESP_Vehicle"] = false; sync_bool["bWESP_Airdrop"] = false;
     sync_bool["bWESP_Supply"] = false; sync_float["fWorldESP_MaxDist"] = 300.f;
     sync_bool["bESP_FacingWarning"] = false;
+    sync_bool["bSDKDump"] = false;
     sync_bool["bNoRecoil"] = false; sync_bool["bNoSpread"] = false;
     sync_bool["bNoSway"] = false; sync_bool["bRapidFire"] = false;
     sync_bool["bFastReload"] = false; sync_bool["bInstantSwitch"] = false;

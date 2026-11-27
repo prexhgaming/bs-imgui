@@ -326,6 +326,451 @@ def _aim_diag(msg):
     _dbg_last_aim = now
     _dbg("AIM", msg)
 
+# ============================================================
+# 🔥 SDK DUMPER
+# ============================================================
+# Driven by the "Dump SDK" toggle (bSDKDump). It is EDGE triggered: the dump
+# runs once when the flag flips false->true, on a worker thread, so the ESP/aim
+# tick is never stalled. Nothing here may raise into the caller - every
+# strategy records its outcome in dump_log.txt instead, because we do not know
+# in advance which introspection accessors this engine build actually exposes.
+#
+# Output (first writable candidate wins):
+#   /storage/emulated/0/Android/data/<pkg>/files/sdk   <- requested location
+#   .../files/Nexora/sdk on internal storage           <- fallback
+#     bones.txt          real bone names of a live model + hit/miss for ours
+#     sdk/<module>.py    API of every gclient.* / gshare.* module
+#     sdk/libGame_SDK.py class field offsets (drop-in for the old SDK)
+#     dump_log.txt       which accessors worked, what failed and why
+_sdk_prev_flag = False
+_sdk_busy      = False
+
+try:
+    import sys as _sys
+except Exception:
+    _sys = None
+
+# Packages the overlay itself imports (Space, CombatAvatar, WeaponCase,
+# FpsPlacer all live under these), so they are the ones worth dumping.
+_SDK_PREFIXES   = ('gclient.', 'gshare.')
+_SDK_MAX_MODS   = 900
+_SDK_MAX_CLASS  = 600
+_SDK_MAX_MEMBER = 400
+_SDK_MAX_NAMES  = 512
+
+# Which bone word to look for when suggesting a replacement for a MISS. The
+# left/right side is handled separately so 'lshoulder' prefers a name that also
+# mentions L/Left.
+_SDK_BONE_TOKEN = {
+    'head': 'head', 'neck': 'neck', 'spine': 'spine', 'spine1': 'spine',
+    'pelvis': 'pelvis', 'lshoulder': 'arm', 'rshoulder': 'arm',
+    'lforearm': 'forearm', 'rforearm': 'forearm', 'lhand': 'hand',
+    'rhand': 'hand', 'lthigh': 'thigh', 'rthigh': 'thigh',
+    'lknee': 'calf', 'rknee': 'calf', 'lfoot': 'foot', 'rfoot': 'foot',
+}
+
+def _sdk_dirs():
+    return [
+        '/storage/emulated/0/Android/data/%s/files/sdk' % _PKG,
+        '/sdcard/Android/data/%s/files/sdk' % _PKG,
+        '/data/user/0/%s/files/Nexora/sdk' % _PKG,
+        '/data/data/%s/files/Nexora/sdk' % _PKG,
+    ]
+
+def _sdk_pick_dir():
+    """First candidate we can actually create and write into."""
+    for d in _sdk_dirs():
+        try:
+            os.makedirs(d)
+        except Exception:
+            pass
+        try:
+            probe = os.path.join(d, '.probe')
+            with open(probe, 'w') as f:
+                f.write('ok')
+            os.remove(probe)
+            return d
+        except Exception:
+            continue
+    return None
+
+def _sdk_write(path, text):
+    try:
+        with open(path, 'w') as f:
+            f.write(text)
+        return True
+    except Exception:
+        return False
+
+def _sdk_coerce_names(v):
+    """Turn whatever a bone accessor returned into a list of plain names."""
+    if v is None:
+        return []
+    try:
+        items = list(v)
+    except Exception:
+        return []
+    names = []
+    for item in items[:_SDK_MAX_NAMES]:
+        try:
+            if isinstance(item, str):
+                names.append(item)
+            else:
+                n = getattr(item, 'name', None)
+                if n is None:
+                    n = getattr(item, 'Name', None)
+                if n:
+                    names.append(str(n))
+        except Exception:
+            continue
+    return names
+
+def _sdk_bone_names(model):
+    """Best-effort list of a model's real bone names.
+
+    Returns (names, how). `how` records the accessor that worked, which is the
+    single most useful line in the log: it tells us what this build exposes and
+    therefore how a future dumper should be written.
+    """
+    # 1) accessors that hand back the whole list at once
+    for attr in ('GetBoneNames', 'GetAllBoneNames', 'GetBones', 'GetJointNames',
+                 'GetSkeletonBoneNames'):
+        fn = getattr(model, attr, None)
+        if callable(fn):
+            try:
+                names = _sdk_coerce_names(fn())
+                if names:
+                    return names, attr + '()'
+            except Exception:
+                pass
+    # 2) collections hanging off the model or its skeleton
+    holders = [(model, 'model')]
+    for side in ('skeleton', 'Skeleton', 'skeletal_mesh', 'SkeletalMesh'):
+        try:
+            h = getattr(model, side, None)
+            if h is not None:
+                holders.append((h, 'model.' + side))
+        except Exception:
+            pass
+    for holder, label in holders:
+        for attr in ('bones', 'Bones', 'joints', 'Joints', 'bone_names'):
+            try:
+                names = _sdk_coerce_names(getattr(holder, attr, None))
+                if names:
+                    return names, '%s.%s' % (label, attr)
+            except Exception:
+                pass
+    # 3) indexed accessor
+    cnt = None
+    for attr in ('GetBoneCount', 'GetBonesCount', 'bone_count', 'BoneCount'):
+        try:
+            v = getattr(model, attr, None)
+            cnt = int(v() if callable(v) else v)
+            if cnt > 0:
+                break
+        except Exception:
+            cnt = None
+    if cnt:
+        names = []
+        for i in range(min(cnt, _SDK_MAX_NAMES)):
+            for attr in ('GetBoneName', 'GetBoneNameByIndex', 'GetJointName'):
+                fn = getattr(model, attr, None)
+                if callable(fn):
+                    try:
+                        names.append(str(fn(i)))
+                        break
+                    except Exception:
+                        continue
+        if names:
+            return names, 'GetBoneName(i)'
+    return [], 'none'
+
+def _sdk_side_ok(short_key, name):
+    """Does the candidate name carry the same left/right side as our key?"""
+    if short_key[0] not in ('l', 'r'):
+        return True
+    low = name.lower()
+    want = ('l', 'left') if short_key[0] == 'l' else ('r', 'right')
+    other = ('r', 'right') if short_key[0] == 'l' else ('l', 'left')
+    def has(tokens, allow_suffix):
+        for t in tokens:
+            if allow_suffix:
+                # 'biped L Arm' / 'Bip01 L_Calf' - a leading side marker
+                if low.startswith(t + ' ') or low.startswith(t + '_') or low.startswith(t + '-'):
+                    return True
+                if (' ' + t + ' ') in low or ('_' + t + '_') in low:
+                    return True
+            elif t in low:
+                return True
+        return False
+    if has(other, False) and not has(want, False):
+        return False
+    return True
+
+def _sdk_suggest(short_key, real_names):
+    """Plausible replacements for one of our bone names."""
+    token = _SDK_BONE_TOKEN.get(short_key, short_key)
+    hits = [n for n in real_names if token in n.lower() and _sdk_side_ok(short_key, n)]
+    # prefer the same side, then the shortest (least decorated) name
+    hits.sort(key=lambda s: (0 if _sdk_side_ok(short_key, s) else 1, len(s)))
+    return hits[:6]
+
+def _sdk_live_models():
+    """(label, model) pairs taken from the same entities the ESP walks."""
+    out = []
+    try:
+        av = getattr(genv, 'avatar', None)
+        ca = getattr(av, 'combat_avatar', None) if av else None
+        m = getattr(ca, 'model', None) if ca else None
+        if m:
+            out.append(('local:%s' % getattr(ca, 'name', '?'), m))
+    except Exception:
+        pass
+    try:
+        inst = getattr(genv, 'space', None)
+        if not inst:
+            inst = Space._instance
+        for eid, ent in list((getattr(inst, 'entities', None) or {}).items()):
+            try:
+                if not isinstance(ent, CombatAvatar):
+                    continue
+                m = getattr(ent, 'model', None)
+                if m:
+                    out.append(('entity:%s' % eid, m))
+                if len(out) >= 6:
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
+
+def _sdk_dump_bones(root, log):
+    """bones.txt - the file that actually fixes the skeleton and aim bones."""
+    lines = ['=== NEXORA SDK DUMP / BONES ===',
+             'package : %s' % _PKG,
+             'time    : %s' % time.strftime('%Y-%m-%d %H:%M:%S')]
+    models = _sdk_live_models()
+    if not models:
+        lines.append('NO LIVE MODEL FOUND - be in a match with at least one avatar.')
+        _sdk_write(os.path.join(root, 'bones.txt'), '\n'.join(lines) + '\n')
+        log.append('bones: no live model (not in a match?)')
+        return False
+
+    label, model = models[0]
+    real, how = _sdk_bone_names(model)
+    lines.append('model   : %s' % label)
+    lines.append('accessor: %s' % how)
+    lines.append('')
+
+    if not real:
+        lines.append('Could not enumerate bone names from this model.')
+        lines.append('Attributes present on the model object:')
+        try:
+            names = [a for a in dir(model) if not a.startswith('_')]
+            for a in names[:120]:
+                lines.append('  ' + a)
+            small = [a for a in names if 'bone' in a.lower() or 'skeleton' in a.lower()
+                     or 'joint' in a.lower()]
+            lines.append('')
+            lines.append('bone/skeleton/joint attributes: %s' % (small or 'none'))
+        except Exception as e:
+            lines.append('dir() failed: %r' % (e,))
+        _sdk_write(os.path.join(root, 'bones.txt'), '\n'.join(lines) + '\n')
+        log.append('bones: model found but no bone list (%s)' % how)
+        return False
+
+    lines.append('--- OUR 17 NAMES ---')
+    lines.append('%-12s %-24s %s' % ('key', 'engine name', 'result'))
+    hits = 0
+    misses = []
+    for key, engine_name in _ESP_BONES:
+        ok = False
+        try:
+            ok = bool(model.GetBoneWorldPosition(engine_name))
+        except Exception:
+            ok = False
+        if ok:
+            hits += 1
+            lines.append('%-12s %-24s HIT' % (key, engine_name))
+        else:
+            miss = '%-12s %-24s MISS' % (key, engine_name)
+            sugg = _sdk_suggest(key, real)
+            if sugg:
+                miss += '   -> try: %s' % ', '.join(sugg)
+            lines.append(miss)
+            misses.append((key, sugg))
+    lines.append('')
+    lines.append('--- REAL BONE LIST (%d) ---' % len(real))
+    for n in real:
+        lines.append('  ' + n)
+    lines.append('')
+    lines.append('--- AIM BONE MAP ---')
+    for idx, name in sorted(_AIM_BONE_MAP.items()):
+        try:
+            ok = bool(model.GetBoneWorldPosition(name))
+        except Exception:
+            ok = False
+        lines.append('%d %-16s %s' % (idx, name, 'HIT' if ok else 'MISS'))
+
+    _sdk_write(os.path.join(root, 'bones.txt'), '\n'.join(lines) + '\n')
+    log.append('bones: %d/%d of our names hit, real list=%d, accessor=%s'
+               % (hits, len(_ESP_BONES), len(real), how))
+    if misses:
+        log.append('bones: MISS -> ' + ', '.join('%s' % k for k, _ in misses))
+    return True
+
+def _sdk_member_lines(cls):
+    """Members of a class, read from __dict__ so descriptors never fire."""
+    out = []
+    try:
+        members = list(vars(cls).items())
+    except Exception as e:
+        return ['    # vars() failed: %r' % (e,)]
+    for name, val in members[:_SDK_MAX_MEMBER]:
+        if name.startswith('__'):
+            continue
+        try:
+            if callable(val):
+                out.append('    def %s(...): ...' % name)
+            elif isinstance(val, bool):
+                out.append('    %s: bool = %s' % (name, val))
+            elif isinstance(val, int):
+                if 0 < val < 0x100000:
+                    out.append('    %s: int = 0x%X' % (name, val))
+                else:
+                    out.append('    %s: int = %d' % (name, val))
+            elif isinstance(val, float):
+                out.append('    %s: float = %r' % (name, val))
+            elif isinstance(val, str):
+                s = val if len(val) <= 60 else val[:57] + '...'
+                out.append('    %s: str = %r' % (name, s))
+            elif isinstance(val, property):
+                out.append('    %s: <property>' % name)
+            else:
+                out.append('    %s: %s' % (name, type(val).__name__))
+        except Exception:
+            continue
+    return out
+
+def _sdk_dump_api(root, log):
+    """sdk/<module>.py for every engine module in sys.modules."""
+    if _sys is None:
+        log.append('api: sys unavailable')
+        return 0
+    outdir = os.path.join(root, 'sdk')
+    try:
+        os.makedirs(outdir)
+    except Exception:
+        pass
+
+    try:
+        pairs = [(n, m) for n, m in list(_sys.modules.items())
+                 if n and m is not None and n.startswith(_SDK_PREFIXES)]
+    except Exception as e:
+        log.append('api: sys.modules failed: %r' % (e,))
+        return 0
+    pairs.sort()
+    written = 0
+    offset_classes = {}
+    for modname, mod in pairs[:_SDK_MAX_MODS]:
+        try:
+            body = ['# module: %s' % modname,
+                    '# dumped from the running engine',
+                    'import sys', '']
+            try:
+                classes = [(n, v) for n, v in vars(mod).items()
+                           if isinstance(v, type) and not n.startswith('_')]
+            except Exception as e:
+                body.append('# vars() failed: %r' % (e,))
+                classes = []
+            for cname, cls in classes[:_SDK_MAX_CLASS]:
+                try:
+                    bases = ', '.join(b.__name__ for b in cls.__bases__) or 'object'
+                except Exception:
+                    bases = 'object'
+                body.append('class %s(%s):' % (cname, bases))
+                mem = _sdk_member_lines(cls)
+                body.extend(mem or ['    ...'])
+                body.append('')
+                # collect int-like members for the offsets file
+                ints = {}
+                try:
+                    for mn, mv in list(vars(cls).items()):
+                        if mn.startswith('_'):
+                            continue
+                        if isinstance(mv, int) and not isinstance(mv, bool) and 0 < mv < 0x100000:
+                            ints[mn] = mv
+                except Exception:
+                    pass
+                if ints:
+                    offset_classes[cname] = ints
+            body.append('')
+            body.append('def %s(): ...' % ('Get' + modname.split('.')[-1].capitalize()))
+            fname = modname.replace('.', '_') + '.py'
+            if _sdk_write(os.path.join(outdir, fname), '\n'.join(body[:4000]) + '\n'):
+                written += 1
+        except Exception:
+            continue
+
+    # Offsets file in the same shape as the old backup SDK, so it is a drop-in.
+    off = ['# Messiah Engine Python SDK', '# regenerated at runtime by the Nexora SDK dumper',
+           '# class field offsets (best effort: every int-like class member)', '']
+    for cname in sorted(offset_classes):
+        off.append('class %s:' % cname)
+        for mn, mv in sorted(offset_classes[cname].items()):
+            off.append('    %s = 0x%X' % (mn, mv))
+        off.append('')
+    _sdk_write(os.path.join(outdir, 'libGame_SDK.py'), '\n'.join(off) + '\n')
+
+    log.append('api: %d module file(s), %d class(es) with int members'
+               % (written, len(offset_classes)))
+    return written
+
+def _sdk_run():
+    global _sdk_busy
+    t0 = time.time()
+    log = []
+    try:
+        root = _sdk_pick_dir()
+        if not root:
+            _dbg('SDK', 'no writable output directory')
+            log.append('no writable output directory (tried %s)' % (_sdk_dirs(),))
+            return
+        log.append('dir: %s' % root)
+        try:
+            _sdk_dump_bones(root, log)
+        except Exception as e:
+            log.append('bones: exception %r' % (e,))
+        try:
+            _sdk_dump_api(root, log)
+        except Exception as e:
+            log.append('api: exception %r' % (e,))
+        log.append('elapsed: %.1fs' % (time.time() - t0))
+        _sdk_write(os.path.join(root, 'dump_log.txt'), '\n'.join(log) + '\n')
+        _dbg('SDK', 'dump finished -> %s' % root)
+        for line in log:
+            _dbg('SDK', line)
+    except Exception as e:
+        try:
+            _dbg('SDK', 'dump failed: %r' % (e,))
+        except Exception:
+            pass
+    finally:
+        _sdk_busy = False
+
+def _sdk_poll():
+    """Cheap per-tick check. Only the false->true flip starts a dump."""
+    global _sdk_prev_flag, _sdk_busy
+    flag = bool(sync_attrs.get('bSDKDump', False))
+    if flag and not _sdk_prev_flag and not _sdk_busy:
+        _sdk_busy = True
+        try:
+            threading.Thread(target=_sdk_run, daemon=True).start()
+        except Exception:
+            _sdk_run()          # thread creation failed: run inline, still once
+    _sdk_prev_flag = flag
+
 @TRY
 def EspUpdate(*_, **__):
     if not sync_attrs.get('bESP', True):
@@ -875,6 +1320,10 @@ _tick_space = None
 _tick_regs  = 0
 
 def on_space_tick(dtime):
+    try:
+        _sdk_poll()
+    except:
+        pass
     try:
         if sync_attrs.get('bESP', True):
             EspUpdate()

@@ -387,6 +387,11 @@ void DrawMenu(ImGuiIO& io) {
             if (sync_bool["bLootESP"]) {
                 needSync |= NS_Slider("loot_esp_dist", "Max Distance", &sync_float["fLootESP_MaxDist"], 20, 400, "m");
             }
+            ImGui::Dummy(ImVec2(0, 8));
+            // Utility, not a visual: writes the engine's Python API and the live
+            // model's real bone names to Android/data/<pkg>/files/sdk. It is
+            // edge-triggered in Python, so flipping it on dumps exactly once.
+            needSync |= NS_Toggle("sdk_dump", "Dump SDK", &sync_bool["bSDKDump"]);
         }
     }
 
