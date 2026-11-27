@@ -7,9 +7,9 @@ import top.niunaijun.blackreflection.annotation.BStaticMethod;
 @BClassName("android.app.ActivityTaskManager")
 public interface ActivityTaskManager {
 
-  @BStaticMethod
-  Object getService();
+    @BStaticMethod
+    Object getService();
 
-  @BStaticField
-  Object IActivityTaskManagerSingleton();
+    @BStaticField
+    Object IActivityTaskManagerSingleton();
 }

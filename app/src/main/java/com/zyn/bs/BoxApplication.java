@@ -4,25 +4,36 @@ import android.app.Application;
 import android.content.Context;
 import android.util.Log;
 
-import com.hello.sandbox.SandBoxCore;
-import com.hello.sandbox.app.configuration.ClientConfiguration;
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.configuration.ClientConfiguration;
 
 /**
  * Host application — attaches the sandbox core before anything else runs.
  *
- * <p>Two calls, in this order, and nothing else:</p>
+ * <p>The engine is BlackBox Reborn ({@code top.niunaijun.blackbox}), which has a
+ * slightly wider boot contract than the previous core. The order below is the
+ * one its own host app uses and must be kept:</p>
+ *
  * <ol>
- *   <li>{@link SandBoxCore#doAttachBaseContext} in {@code attachBaseContext},
- *       before the rest of the process is set up, so the core can unseal the
- *       hidden-API reflection, pick the process type and install its hooks;</li>
- *   <li>{@link SandBoxCore#doCreate} in {@code onCreate}, which finishes the
- *       content-provider and black-manager wiring.</li>
+ *   <li>{@link BlackBoxCore#onBeforeMainApplicationAttach} — lets callbacks see
+ *       the host Application before the core rewires it;</li>
+ *   <li>{@link BlackBoxCore#doAttachBaseContext} — unseals the hidden-API
+ *       reflection, picks the process type and installs the hooks;</li>
+ *   <li>{@link BlackBoxCore#onAfterMainApplicationAttach} — the matching
+ *       "after" notification;</li>
+ *   <li>{@link BlackBoxCore#doCreate} in {@code onCreate} — finishes the
+ *       content-provider and service wiring.</li>
  * </ol>
  *
- * <p>There is deliberately no activation call: the core is a licence-free build
- * and activates itself inside {@code doAttachBaseContext}. The old
- * {@code CoreActivation} helper existed only to present a key to a remote
- * server, and both are gone.</p>
+ * <p>There is deliberately no activation call: the core carries no licence gate
+ * and activates itself inside {@code doAttachBaseContext}.</p>
+ *
+ * <p>There is also deliberately <em>no</em> background warm-up. An earlier
+ * version kicked off {@code BlackBoxSystem.startup()} on its own thread to
+ * overlap the package scan with process start-up, but that raced the core's own
+ * initialisation and made a tap-to-launch return immediately instead of
+ * starting the game. The core initialises itself on first use; nothing here may
+ * start it early.</p>
  */
 public class BoxApplication extends Application {
 
@@ -32,7 +43,9 @@ public class BoxApplication extends Application {
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
         try {
-            SandBoxCore.get().doAttachBaseContext(base, new ClientConfiguration() {
+            BlackBoxCore.get().onBeforeMainApplicationAttach(this, base);
+
+            BlackBoxCore.get().doAttachBaseContext(base, new ClientConfiguration() {
                 @Override
                 public String getHostPackageName() {
                     return base.getPackageName();
@@ -49,13 +62,15 @@ public class BoxApplication extends Application {
                 public boolean isEnableDaemonService() {
                     return false;
                 }
+
+                // No sandbox launcher/UI inside virtual apps.
+                @Override
+                public boolean isEnableLauncherActivity() {
+                    return false;
+                }
             });
-            // Bring the core's services up now, on a background thread, so the package
-            // scan / user / storage / jar-extraction work overlaps with the rest of
-            // process start-up instead of blocking the first frame. Core calls made
-            // meanwhile simply wait for it (BlackBoxSystem.startup() blocks concurrent
-            // callers), so nothing can observe a half-initialised core.
-            warmCoreAsync();
+
+            BlackBoxCore.get().onAfterMainApplicationAttach(this, base);
         } catch (Throwable t) {
             // A broken core must not make the loader unlaunchable — the UI can
             // still show the game and explain the failure.
@@ -63,39 +78,11 @@ public class BoxApplication extends Application {
         }
     }
 
-    /**
-     * Starts the sandbox core on a background thread.
-     *
-     * <p>{@code BlackBoxSystem.startup()} registers every system service and does the initial
-     * package scan, user read, storage set-up and jar extraction. Previously that all ran
-     * synchronously on the main thread on the first core call, i.e. inside {@code onCreate},
-     * which delayed the first frame. Running it here lets it overlap with the remainder of
-     * process set-up.
-     *
-     * <p>Deliberately fire-and-forget: a failure is non-fatal because the first real core call
-     * retries the same work, and the blocking guard in {@code startup()} keeps concurrent
-     * callers safe.
-     */
-    private void warmCoreAsync() {
-        Thread warm = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    SandBoxCore.get().warmUp();
-                } catch (Throwable t) {
-                    Log.w(TAG, "core warm-up failed; it will retry on first use", t);
-                }
-            }
-        }, "sandbox-warmup");
-        warm.setDaemon(true);
-        warm.start();
-    }
-
     @Override
     public void onCreate() {
         super.onCreate();
         try {
-            SandBoxCore.get().doCreate();
+            BlackBoxCore.get().doCreate();
         } catch (Throwable t) {
             Log.e(TAG, "core create failed", t);
         }

@@ -9,8 +9,10 @@ import android.content.pm.ServiceInfo;
 import android.content.pm.Signature;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
+
 import java.io.File;
 import java.util.List;
+
 import top.niunaijun.blackreflection.annotation.BClassName;
 import top.niunaijun.blackreflection.annotation.BConstructor;
 import top.niunaijun.blackreflection.annotation.BField;
@@ -18,130 +20,129 @@ import top.niunaijun.blackreflection.annotation.BMethod;
 
 @BClassName("android.content.pm.PackageParser")
 public interface PackageParser {
-  @BConstructor
-  android.content.pm.PackageParser _new(String String0);
+    @BConstructor
+    android.content.pm.PackageParser _new(String String0);
 
-  //    @BStaticMethod
-  //    ActivityInfo generateActivityInfo();
-  //
-  //    @BStaticMethod
-  //    ApplicationInfo generateApplicationInfo();
-  //
-  //    @BStaticMethod
-  //    PackageInfo generatePackageInfo();
-  //
-  //    @BStaticMethod
-  //    ProviderInfo generateProviderInfo();
-  //
-  //    @BStaticMethod
-  //    ServiceInfo generateServiceInfo();
 
-  @BMethod
-  void collectCertificates(android.content.pm.PackageParser.Package p, int flags);
 
-  @BMethod
-  android.content.pm.PackageParser.Package parsePackage(
-      File File0, String String1, DisplayMetrics DisplayMetrics2, int int3);
 
-  @BClassName("android.content.pm.PackageParser$SigningDetails")
-  interface SigningDetails {
-    @BField
-    Signature[] pastSigningCertificates();
 
-    @BField
-    Signature[] signatures();
+
+
+
+
+
+
+
+
+
+
 
     @BMethod
-    Boolean hasPastSigningCertificates();
+    void collectCertificates(android.content.pm.PackageParser.Package p, int flags);
 
     @BMethod
-    Boolean hasSignatures();
-  }
+    android.content.pm.PackageParser.Package parsePackage(File File0, String String1, DisplayMetrics DisplayMetrics2, int int3);
 
-  @BClassName("android.content.pm.PackageParser$Component")
-  interface Component {
-    @BField
-    String className();
+    @BClassName("android.content.pm.PackageParser$SigningDetails")
+    interface SigningDetails {
+        @BField
+        Signature[] pastSigningCertificates();
 
-    @BField
-    ComponentName componentName();
+        @BField
+        Signature[] signatures();
 
-    @BField
-    List<android.content.IntentFilter> intents();
-  }
+        @BMethod
+        Boolean hasPastSigningCertificates();
 
-  @BClassName("android.content.pm.PackageParser$PermissionGroup")
-  interface PermissionGroup {
-    @BField
-    PermissionGroupInfo info();
-  }
+        @BMethod
+        Boolean hasSignatures();
+    }
 
-  @BClassName("android.content.pm.PackageParser$Permission")
-  interface Permission {
-    @BField
-    PermissionInfo info();
-  }
+    @BClassName("android.content.pm.PackageParser$Component")
+    interface Component {
+        @BField
+        String className();
 
-  @BClassName("android.content.pm.PackageParser$Service")
-  interface Service {
-    @BField
-    ServiceInfo info();
-  }
+        @BField
+        ComponentName componentName();
 
-  @BClassName("android.content.pm.PackageParser$Provider")
-  interface Provider {
-    @BField
-    ProviderInfo info();
-  }
+        @BField
+        List<android.content.IntentFilter> intents();
+    }
 
-  @BClassName("android.content.pm.PackageParser$Activity")
-  interface Activity {
-    @BField
-    ActivityInfo info();
-  }
+    @BClassName("android.content.pm.PackageParser$PermissionGroup")
+    interface PermissionGroup {
+        @BField
+        PermissionGroupInfo info();
+    }
 
-  @BClassName("android.content.pm.PackageParser$Package")
-  interface Package {
-    @BField
-    List activities();
+    @BClassName("android.content.pm.PackageParser$Permission")
+    interface Permission {
+        @BField
+        PermissionInfo info();
+    }
 
-    @BField
-    Bundle mAppMetaData();
+    @BClassName("android.content.pm.PackageParser$Service")
+    interface Service {
+        @BField
+        ServiceInfo info();
+    }
 
-    @BField
-    String mSharedUserId();
+    @BClassName("android.content.pm.PackageParser$Provider")
+    interface Provider {
+        @BField
+        ProviderInfo info();
+    }
 
-    @BField
-    Signature[] mSignatures();
+    @BClassName("android.content.pm.PackageParser$Activity")
+    interface Activity {
+        @BField
+        ActivityInfo info();
+    }
 
-    @BField
-    Object mSigningDetails();
+    @BClassName("android.content.pm.PackageParser$Package")
+    interface Package {
+        @BField
+        List activities();
 
-    @BField
-    Integer mVersionCode();
+        @BField
+        Bundle mAppMetaData();
 
-    @BField
-    String packageName();
+        @BField
+        String mSharedUserId();
 
-    @BField
-    List permissionGroups();
+        @BField
+        Signature[] mSignatures();
 
-    @BField
-    List permissions();
+        @BField
+        Object mSigningDetails();
 
-    @BField
-    List<String> protectedBroadcasts();
+        @BField
+        Integer mVersionCode();
 
-    @BField
-    List providers();
+        @BField
+        String packageName();
 
-    @BField
-    List receivers();
+        @BField
+        List permissionGroups();
 
-    @BField
-    List<String> requestedPermissions();
+        @BField
+        List permissions();
 
-    @BField
-    List services();
-  }
+        @BField
+        List<String> protectedBroadcasts();
+
+        @BField
+        List providers();
+
+        @BField
+        List receivers();
+
+        @BField
+        List<String> requestedPermissions();
+
+        @BField
+        List services();
+    }
 }

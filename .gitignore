@@ -46,7 +46,8 @@ __pycache__/
 .venv/
 venv/
 # Root-only: a bare "env/" also swallowed the core's Java package
-# Bcore/src/main/java/com/hello/sandbox/core/env/ , which then never reached CI.
+# Bcore/src/main/java/top/niunaijun/blackbox/core/env/ , which then never
+# reached CI.
 /env/
 *.egg-info/
 .pytest_cache/

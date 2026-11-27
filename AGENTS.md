@@ -15,123 +15,130 @@
 - Repo root **is** the Gradle source root (the app used to live in `loader/`, now flattened).
 - `app/` — the loader app module (`com.zyn.bs`).
 - `app/src/main/jni/` — the native payload, an **ndk-build** project (`Android.mk` + `Application.mk`).
-- `Bcore/` — the **sandbox core, built from source** as a **single** Gradle library module
-  (Apache-2.0). It used to be four (`Bcore` plus `android-mirror`, `black-fake`, `black-hook` as
-  submodules of it); they were merged because every class already lived in its final package, so the
-  merge needed no source or import change. `Bcore/src/main/java/` now holds all four package roots:
-  - `com/hello/sandbox/**` — the engine; `src/main/cpp` is a **CMake** project producing `libsandbox.so`.
-  - `black/android/**` — the BlackReflection mirrors. The `BR*` classes are **generated** from these
-    by the `BlackReflection:compiler` annotation processor configured in `Bcore/build.gradle`; never
-    commit them.
-  - `android/**` — black-fake's platform stubs. These deliberately shadow the real `android.jar`
-    classes, which is how the sandbox replaces them.
+- `Bcore/` — the **sandbox engine**, built from source as a single Gradle library module:
+  - `top/niunaijun/blackbox/**` — the engine (public entry point `BlackBoxCore`). Native side is
+    `src/main/cpp`, an **ndk-build** project producing `libblackbox.so`; it links its own prebuilt
+    `libdobby.a`.
   - `top/niunaijun/jnihook/**` — the JNI reflection hook.
-  - `src/main/aidl/` mirrors that split: both `com/**` and `android/**` live in this one module's
-    AIDL source set.
+  - `black/**` — the BlackReflection mirrors. The `BR*` classes are **generated** from these by the
+    `:compiler` annotation processor; never commit them.
+  - `android/**` — platform stubs that deliberately shadow the real `android.jar` classes.
+  - `src/main/aidl/**` — the engine's AIDL.
+- `black-reflection/` — BlackReflection runtime library (`:black-reflection`, plain `java-library`).
+- `compiler/` — the BlackReflection annotation processor (`:compiler`, compile-time only, never packaged).
 - `app/src/main/assets/a7f3c9.bin` — AES-256-GCM encrypted wallpaper (see "Encrypted assets").
 
-### Why the core is source, not an AAR
-It used to be a prebuilt `mundo-release.aar`. That build was **64-bit only**, and its engine was
-gated on a remote licence server (`MetaActivationManager` → HTTP → native "prepared" flag), which
-made it unusable offline and untestable. The source drop is Apache-2.0, so the core is now compiled
-here, licence-free, for every ABI.
+### Which engine this is
+BlackBox **Reborn** (github.com/fdavids77/BlackBoxReborn), vendored from source and Apache-2.0.
+Its README still advertises GPL-3.0, but its `LICENSE` file is Apache-2.0 — the licence file
+governs, and it matches this repo. It replaced the previous core entirely (different lineage,
+different packages, different native build); the swap is not half-reversible, so the pre-swap state
+is tagged `pre-engine-swap` on `main` if a full revert is ever needed.
+
+Why source and not an AAR: the original core was a prebuilt `mundo-release.aar` that shipped
+**64-bit only** and was gated on a remote licence server (`MetaActivationManager` → HTTP → native
+"prepared" flag), making it unusable offline. Building from source keeps it licence-free and
+inspectable.
+
+### Telemetry was deliberately removed — do not reintroduce it
+This engine shipped a log uploader: `utils/LogSender.java` POSTed logcat as multipart to a
+third-party endpoint (`logs-sender-api.vercel.app/api/<chatId>/upload`) with a hardcoded chat id in
+`ClientConfiguration.getLogSenderChatId()`. All of it is gone: the class, the `sendLogs(...)` chain
+in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call sites in
+`SimpleCrashFix` that fired it on every crash type. Nothing in the core may send data off-device.
 
 ## Building
-- Two native builds, both driven by Gradle: `externalNativeBuild.ndkBuild` for the payload and
-  `externalNativeBuild.cmake` for the core engine. **One command builds everything:**
-  `gradle assembleDebug` (CI builds debug only).
-- `gradle assembleDebug bcoreJar` additionally emits `dist/bcore-all.jar` — the core packed into one
-  reusable jar (see "Reusing the core jar").
-- **CMake 3.22.1** must be installed (`cmake;3.22.1` via sdkmanager) for `:Bcore`.
+- **Two native builds, both ndk-build, both driven by Gradle:** `externalNativeBuild.ndkBuild` for the
+  payload and for the engine. **There is no CMake anywhere** — do not install or wire CMake back in.
+- **One command builds everything:** `gradle assembleDebug` (CI builds debug only).
+- `gradle assembleDebug bcoreJar` additionally emits `dist/bcore-all.jar` (see "Reusing the core jar").
+- Toolchain (keep `app`, `Bcore` and CI in sync): **AGP 8.13.2**, Gradle **8.14.5** (CI's
+  `GRADLE_VERSION`), `compileSdk 36`, `buildToolsVersion 36.1.0`, **Java 17**, `minSdk 24`,
+  `targetSdk 28`. `compileSdk` must stay 36: the engine's AAR metadata pins `minCompileSdk 36`, so a
+  lower value is a hard failure, not a warning.
 - No `gradlew` in the repo — the wrapper jar isn't committed. CI gets `gradle` from
-  `gradle/actions/setup-gradle@v3` (`GRADLE_VERSION: 8.5`). Run `gradle wrapper` locally to generate one.
-- `ndkVersion` in `app/build.gradle` must match `env.NDK_VERSION` in the workflow (currently `27.0.12077973`);
-  `Bcore/build.gradle` pins the same version.
+  `gradle/actions/setup-gradle@v3`; run `gradle wrapper` locally if you want one.
+- `ndkVersion` must match CI's `NDK_VERSION` (`27.0.12077973`). `Bcore/build.gradle` and the app pin it.
 - NDK **r26+** required (`Application.mk` sets `APP_SUPPORT_FLEXIBLE_PAGE_SIZES`).
-- `APP_ABI := armeabi-v7a` only for the **payload** (32-bit game target). `:Bcore` builds **all four
-  ABIs** (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`); the app's `abiFilters` decides what is
-  actually packaged, so the APK stays 32-bit. Change `app/build.gradle`'s `abiFilters` too if the
-  payload ever goes 64-bit.
-- Native outputs: `app/build/**/lib/<abi>/libzyn-bs.so` and `.../lib<abi>/libsandbox.so`.
-  Module names: `zyn-bs` (shared) + prebuilt `libdobby`; the core's CMake target is `sandbox`.
-- `app/src/main/jni/Dobby/libraries/*/libdobby.a` are prebuilt and **must stay committed** — `.gitignore`
-  has an explicit `!` negation for them (it ignores `*.a` generally).
+- ABI split: the **payload** is `armeabi-v7a` only (32-bit game target); the **engine** builds
+  `arm64-v8a` + `armeabi-v7a`. The app's `abiFilters` decides what is packaged, so the APK carries
+  `armeabi-v7a` libs only.
+- Native outputs: `libzyn-bs.so` (payload, module `zyn-bs` + prebuilt `libdobby`) and
+  `libblackbox.so` (engine). CI asserts both are inside the APK.
+- AIDL imports are declared with `aidlPackagedList` — the older `aidlPackageWhiteList` spelling was
+  removed in AGP 8.
+- `app/src/main/jni/Dobby/libraries/*/libdobby.a` are prebuilt and **must stay committed**
+  (`.gitignore` has an explicit `!` negation for them, since it ignores `*.a` generally).
 - Build outputs `app/src/main/jni/libs/`, `app/src/main/jni/obj/`, `dist/` and `*/build/` are git-ignored.
-- **`targetSdk` must stay 28** — the core's reflected platform APIs are the pre-29 ones and break on
-  newer targets. The `ExpiredTargetSdkVersion` lint check is therefore disabled in `app/build.gradle`
-  (`lint { disable ... ; checkReleaseBuilds false; abortOnError false }`); this is a sideloaded app,
-  not a Play Store submission.
-- The core modules are AGP 8 clean: `dexOptions`/`aaptOptions` legacy blocks were removed and the
-  `package=` attribute was stripped from every core `AndroidManifest.xml` (AGP 8 requires `namespace`
-  in `build.gradle` instead).
 
 ## Sandbox core — how we drive it
-- API: `SandBoxCore.get()` (`com.hello.sandbox.SandBoxCore`). Internals live under `com.hello.sandbox.**`,
-  `top.niunaijun.**`, and the `black.**` / `mirror.**` reflection stubs.
-- **Two lifecycle calls, in this order** (both in `BoxApplication`):
-  `doAttachBaseContext(context, ClientConfiguration)` from `attachBaseContext`, then `doCreate()`
-  from `onCreate`. `ClientConfiguration.getHostPackageName()` is the only abstract method; this app
-  also overrides `isHideRoot` (true) and `isEnableDaemonService` (false).
-- **The core is warmed up off the main thread.** `attachBaseContext` calls `SandBoxCore.get().warmUp()`
-  on a background thread ("core-warmup") so the package scan, jar extraction and service start-up
-  overlap the rest of process start instead of blocking the first frame.
-  `BlackBoxSystem.startup()` is the single entry point and blocks concurrent callers, so a UI call
-  arriving mid-warm-up waits rather than seeing a half-initialised core — don't make it non-blocking.
-- **There is no licensing.** `MetaActivationManager.activateSdk()` takes no key, does no network I/O
-  and just returns; `isLicenseActivated()` is unconditionally true. `LicenseVerifier` (the old HTTP
-  client) was deleted, the two gates in `SandBoxCore.launchApk` / `installPackageAsUser` were removed,
-  and the core calls `activateSdk()` itself at the end of `doAttachBaseContext`. **Do not reintroduce
-  a key, a server URL or a remote check** — the point of building from source is that it stays local.
-- API in use by `LaunchController`: `SandBoxCore.get().isInstalled(pkg, userId)`,
-  `installPackageAsUser(pkg, userId)` → `InstallResult` (public `success` / `msg`), and
-  `launchApk(pkg, userId)` → boolean. User slot is `0`.
-- OBB: **the SDK copies expansion files itself — the app has no OBB code at all.**
-  `BObbInstaller` (`core/system/pm`) runs at the end of a successful install, and
-  `BPackageManagerService` calls `BObbInstaller.uninstall` on uninstall. It looks in the device's
-  real `Android/obb/<pkg>/` (`Environment.getExternalStorageDirectory()`) and copies any
-  `*.obb` into `BEnvironment.getExternalObbDir(pkg, userId)`
-  (`<getExternalUserDir(userId)>/Android/obb/<pkg>/`) with a 1 MiB buffer -- expansion files are
-  multi-GB, so never route them through `FileUtils.copyFile`'s 1 KB loop.
-  `SandBoxCore.get().installObb(pkg, userId)` / `uninstallObb(...)` re-run or drop the copy on demand.
-  Resolve paths through `BEnvironment`, never hardcode them.
-- **There is no Xposed support, and it is not coming back.** The whole subsystem was removed: the
-  module-manager service, its AIDL and the module entities, the PineXposed loader in
-  `BActivityThread`, `Hook/VMClassLoaderHook` (with the `hideXposed` JNI entry point), and the SDK
-  surface (`installXPModule`, `uninstallXPModule`, `isXPEnable`, `setXPEnable`, `isXposedModule`,
-  `isModuleEnable`, `getInstalledXPModules`, `isHideXposed`). `pine:core` must stay — `jnihook` needs
-  it — but do not reintroduce `pine:xposed`.
-- Core keep rules ship as `Bcore/consumer-rules.pro` (AGP merges them into the app automatically).
-  `app/proguard-rules.pro` deliberately contains no core packages.
+- API: `BlackBoxCore.get()` (`top.niunaijun.blackbox.BlackBoxCore`), used from `LaunchController`:
+  `isInstalled(pkg, userId)`, `installPackageAsUser(pkg, userId)` → `InstallResult`
+  (public `success` / `msg`), `launchApk(pkg, userId)` → boolean. User slot is `0`.
+- **Boot contract — four calls, in this order**, all in `BoxApplication`:
+  `onBeforeMainApplicationAttach(this, base)` → `doAttachBaseContext(base, ClientConfiguration)` →
+  `onAfterMainApplicationAttach(this, base)` from `attachBaseContext`, then `doCreate()` from
+  `onCreate`. Each block is wrapped in `catch (Throwable)` so a broken engine can't make the loader
+  unlaunchable. `ClientConfiguration` needs `getHostPackageName()` (abstract); this app also
+  overrides `isHideRoot` (true), `isEnableDaemonService` (false) and `isEnableLauncherActivity` (false).
+- **There is deliberately no warm-up and no early startup.** An earlier version started the engine's
+  package scan on a background thread to overlap process start-up; that raced the engine's own
+  initialisation and made a tap-to-launch return immediately instead of starting the game. The engine
+  initialises itself on first use — never start it early.
+- **No licence/activation anything.** There is no key, no server URL and no remote check in this
+  engine. Keep it that way.
+- **No OBB code, by decision.** The game ships as a single APK with no expansion file, so nothing
+  copies OBBs (the engine exposes `BEnvironment.getExternalObbDir` but its install does not use it).
+  Don't add OBB handling without a game that actually has an expansion file.
+- No Xposed subsystem (no `*Xposed*` class at all); a few files mention it only while filtering
+  stack traces or hiding detection.
+- `FileUtils.copyFile` uses a 64 KiB buffer and a `transferTo` fast path — APK copies on the install
+  path go through it, so keep the bulk path bulk.
+
+## Minify, shrink and keep rules
+- **R8 + resource shrinking are ON for the debug build type as well as release**, because debug is
+  what CI ships and signs (`minifyEnabled true`, `shrinkResources true`,
+  `proguard-android-optimize.txt`).
+- `Bcore/consumer-rules.pro` is the important half: AGP merges it into the app automatically. It keeps
+  everything the engine resolves **by name at runtime** — `top.niunaijun.blackbox.**` (including the
+  `proxy.**` pool, whose `:p0`…`:p99` components are named from the merged manifest),
+  `top.niunaijun.jnihook.**`, `top.niunaijun.blackreflection.**`, `mirror.**` and `black.**`, the
+  `android.**`/`com.android.**` stubs, and `native <methods>` — plus the BlackReflection annotation
+  rules, which only exist there and never in the app's own file.
+- `app/proguard-rules.pro` deliberately contains **no keeps for `com.zyn.bs.**` — shrinking and
+  renaming our own code is safe because the native payload makes **zero** `FindClass`/`GetMethodID`
+  name-based lookups (verified). It only carries `-dontwarn` entries for optional deps the engine
+  references but never calls.
 
 ## Pitfalls that have already cost a build
 - **`.gitignore` must keep the venv rule as `/env/`, not `env/`.** A bare `env/` also matches the
-  core's Java package `Bcore/src/main/java/com/hello/sandbox/core/env/`, so `BEnvironment.java`,
+  engine's Java package `Bcore/src/main/java/top/niunaijun/blackbox/core/env/`, so `BEnvironment.java`,
   `AppSystemEnv.java` and `VirtualRuntime.java` silently stop being committed and CI dies with a
-  cascade of `package com.hello.sandbox.core.env does not exist` — even though the files are sitting
-  right there locally. After touching `.gitignore`, verify with
-  `git check-ignore -v Bcore/src/main/java/com/hello/sandbox/core/env/BEnvironment.java`.
-- **One core tree, always.** Since the module merge `Bcore/src/main/java/` legitimately holds four
-  package roots: `com/`, `black/`, `android/` and `top/`. A *second* `com/hello/sandbox` or a
-  leftover `top/niunaijun/blackbox/` tree means two cores got merged. Check with
-  `find Bcore -path '*niunaijun/blackbox*'`. When swapping in a source drop, diff against the
-  *immediate* parent commit (`<commit>^`), not an older one, or a cleanup will delete files that
-  legitimately landed in between.
+  cascade of `package ... does not exist` — even though the files sit right there locally. After
+  touching `.gitignore`, verify with
+  `git check-ignore -v Bcore/src/main/java/top/niunaijun/blackbox/core/env/BEnvironment.java`.
+- **One engine tree, always.** `Bcore/src/main/java/` holds exactly `android/`, `black/` and `top/`. A
+  leftover `com/hello/sandbox/` (the previous lineage) or a second `top/niunaijun/blackbox/` means two
+  cores got merged. Check with `ls Bcore/src/main/java`.
+- **Dobby is linked twice.** The engine statically links its own `libdobby.a` into `libblackbox.so`,
+  and the payload statically links Dobby into `libzyn-bs.so`. Two copies initialising in one process
+  fight over the same hook slots, which is the prime suspect for random crashes while hooking. If that
+  shows up, make exactly one of them own Dobby.
+- **`targetSdk` must stay 28** — the engine's reflected platform APIs are the pre-29 ones. The
+  `ExpiredTargetSdkVersion` lint check is therefore disabled in `app/build.gradle`; this is a
+  sideloaded app, not a Play Store submission.
 - **No project-level repositories.** `settings.gradle` uses `RepositoriesMode.PREFER_SETTINGS`, so a
-  `repositories { }`/`flatDir { }` block in a module's build file is a hard failure. Note that a
-  `repositories { }` written *inside* `android { }` is not an AGP property — Groovy falls through to
-  the project's `repositories` and triggers exactly this error.
-- **`fake_dlfcn.cpp` supports x86_64** via the shared 64-bit (`Elf64_*`) branch, together with
-  aarch64. All four ABIs build; keep `abiFilters` in `Bcore/build.gradle` complete or the core stops
-  being reusable by a 64-bit host. The APK itself stays `armeabi-v7a`-only via the app's `abiFilters`.
-
+  `repositories { }`/`flatDir { }` block in a module's build file is a hard failure. JitPack must stay
+  in `settings.gradle`: the engine depends on `com.github.tiann:FreeReflection`.
 
 ## Reusing the core jar
-- `gradle bcoreJar` writes `dist/bcore-all.jar`: the `:Bcore` module's classes plus its small runtime
-  deps (FreeReflection, BlackReflection, Pine core). AndroidX/framework classes are never bundled.
-- It contains **Java only** — `libsandbox.so` still comes from the CMake build. The jar saves
-  recompiling ~450 Java files, not the native step.
+- `gradle bcoreJar` writes `dist/bcore-all.jar`: `:Bcore`'s classes plus `:black-reflection` and the
+  small runtime deps (`FreeReflection`, `toml4j`). AndroidX/framework classes are never bundled, and
+  `:compiler` is excluded (annotation processor, compile-time only).
+- It contains **Java only** — `libblackbox.so` still comes from the ndk-build step. The jar saves
+  recompiling the engine's few hundred Java files, not the native build.
 - To consume it: put the jar in `app/libs/` and replace `implementation project(':Bcore')` with
-  `implementation files('libs/bcore-all.jar')` (plus the four Maven deps if you use the thin variant).
+  `implementation files('libs/bcore-all.jar')`.
 - CI uploads it to Telegram next to the APK as `dist/bcore-all-<run_number>.jar`.
 
 ## Signing
@@ -152,12 +159,13 @@ here, licence-free, for every ABI.
 - Verify the shipped asset against the runtime key with `.polydev/verify_asset.py`.
 
 ## CI: .github/workflows/android-build.yml
-- Decodes signing material → installs NDK **+ CMake 3.22.1** → `gradle assembleDebug bcoreJar`
-  piped through `tee` to `build.log`.
+- Decodes signing material → installs NDK **27.0.12077973** and SDK platform/build-tools **36** (no
+  CMake) → `gradle assembleDebug bcoreJar` piped through `tee` to `build.log`.
 - Verifies the APK with `apksigner verify` and **fails if it carries the default `CN=Android Debug`
   certificate** instead of ours.
-- Verifies `bcore-all.jar` actually contains the core (`>= 100` `com/hello/sandbox/` entries), so a
-  silently-empty jar cannot ship.
+- **Fails if either native lib is missing** — `lib/armeabi-v7a/libzyn-bs.so` or `libblackbox.so`.
+- Verifies `bcore-all.jar` actually contains the engine (`>= 100` `top/niunaijun/blackbox/` entries),
+  so a silently-empty jar cannot ship.
 - Telegram report: **failure** → sends `build.log`; **success** → sends the signed APK
   (`dist/bskiller-<versionName>-<run_number>.apk`) **and** `dist/bcore-all-<run_number>.jar`.
 - Logs, APKs and the jar are also kept as a build artifact (`loader-<run_number>`, 14 days).

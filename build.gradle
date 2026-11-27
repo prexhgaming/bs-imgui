@@ -6,16 +6,18 @@ buildscript {
         maven { url 'https://jitpack.io' }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.1.2'
+        // 8.13.2 is what BlackBox Reborn itself builds with: compileSdk 36 and
+        // aidlPackagedList both need a modern AGP.
+        classpath 'com.android.tools.build:gradle:8.13.2'
     }
 }
 
-// Read by every module's build.gradle — Bcore and its submodules use rootProject.ext.
+// Read by every module's build.gradle — Bcore and its helpers use rootProject.ext.
 ext {
-    compileSdkVersion = 34
-    buildToolsVersion = "34.0.0"
+    compileSdkVersion = 36
+    buildToolsVersion = "36.1.0"
     targetSdkVersion = 28
-    blackReflection = '1.1.4'
+    minSdk = 24
 }
 
 task clean(type: Delete) {
@@ -25,19 +27,20 @@ task clean(type: Delete) {
 // ---------------------------------------------------------------------------
 // Distribution: pack the whole sandbox core into one reusable jar.
 //
-// The core is a single library module now, so this just folds its classes (plus
-// the handful of small Maven libs it needs at runtime) into dist/bcore-all.jar.
-// Drop that into app/libs/ and depend on it instead of :Bcore to skip compiling
-// the core's ~450 Java files.
+// Folds :Bcore's classes and :black-reflection's classes (both needed at
+// runtime) plus the couple of small Maven libs the core needs, into
+// dist/bcore-all.jar. Drop that into app/libs/ and depend on it instead of the
+// project modules to skip compiling the core's ~450 Java files.
 //
-// What it does NOT contain: libsandbox.so. The CMake build in :Bcore still has
-// to run for the native engine — the jar only saves the Java side. Android
-// framework / AndroidX classes are never bundled either.
+// What it does NOT contain: libblackbox.so (the ndk-build native engine) and
+// :compiler (the BlackReflection annotation processor — compile-time only).
+// Android framework / AndroidX classes are never bundled either.
 // ---------------------------------------------------------------------------
-def bcoreModules = [':Bcore']
+def coreLibraryModules = [':Bcore']          // Android library -> AAR
+def coreJavaModules = [':black-reflection']  // plain java-library -> jar
 
-// The core's own runtime dependencies. Kept tiny on purpose: no appcompat, no
-// material, nothing the host app already provides.
+// The core's own runtime dependencies, minus anything the host app provides.
+// appcompat/material stay out on purpose: the app already has them.
 configurations {
     bcoreRuntimeLibs {
         canBeConsumed = false
@@ -47,26 +50,30 @@ configurations {
 }
 
 dependencies {
-    bcoreRuntimeLibs 'com.github.tiann:FreeReflection:3.1.0'
-    bcoreRuntimeLibs "com.github.CodingGay.BlackReflection:core:$blackReflection"
-    bcoreRuntimeLibs 'top.canyie.pine:core:0.2.9'
+    bcoreRuntimeLibs 'com.github.tiann:FreeReflection:3.2.2'
+    bcoreRuntimeLibs 'com.moandjiezana.toml:toml4j:0.7.2'
 }
 
 tasks.register('bcoreJar') {
     group = 'distribution'
-    description = 'Packs :Bcore + its small runtime deps into dist/bcore-all.jar'
+    description = 'Packs :Bcore + :black-reflection + runtime deps into dist/bcore-all.jar'
 
-    // The APK is a debug build, so build the core's debug AARs: no second,
-    // release-variant compile of the same sources.
-    dependsOn bcoreModules.collect { "${it}:assembleDebug" }
+    // Debug variant only: the APK is a debug build, so there is no reason to
+    // pay for a second, release-variant compile of the same sources.
+    dependsOn coreLibraryModules.collect { "${it}:assembleDebug" }
+    dependsOn coreJavaModules.collect { "${it}:jar" }
 
     def outDir = file("$rootDir/dist")
     def outFile = new File(outDir, 'bcore-all.jar')
-    def aars = bcoreModules.collect { p ->
-        new File(project(p).buildDir, "outputs/aar/${project(p).name}-debug.aar")
+    def aars = coreLibraryModules.collect { p ->
+        new File(project(p).projectDir, "build/outputs/aar/${project(p).name}-debug.aar")
+    }
+    def plainJars = coreJavaModules.collect { p ->
+        new File(project(p).projectDir, "build/libs/${project(p).name}.jar")
     }
 
     inputs.files(aars)
+    inputs.files(plainJars)
     outputs.file(outFile)
 
     doLast {
@@ -87,8 +94,17 @@ tasks.register('bcoreJar') {
                 zos.closeEntry()
             }
 
-            // 1. Every module's compiled classes, taken from its AAR (this avoids
-            //    depending on AGP's internal intermediates/ layout).
+            def copyJarStream = { java.io.InputStream inStream ->
+                new java.util.zip.ZipInputStream(inStream).withCloseable { zis ->
+                    def entry
+                    while ((entry = zis.nextEntry) != null) {
+                        copyEntry(zis, entry.name)
+                    }
+                }
+            }
+
+            // 1. Android library modules' compiled classes, taken from the AAR
+            //    (this avoids depending on AGP's internal intermediates/ layout).
             aars.each { aar ->
                 if (!aar.exists()) {
                     throw new GradleException("Missing AAR: ${aar}\nRun assembleDebug for the core first.")
@@ -98,25 +114,23 @@ tasks.register('bcoreJar') {
                     if (classesJar == null) {
                         throw new GradleException("No classes.jar inside ${aar}")
                     }
-                    new java.util.zip.ZipInputStream(zf.getInputStream(classesJar)).withCloseable { zis ->
-                        def entry
-                        while ((entry = zis.nextEntry) != null) {
-                            copyEntry(zis, entry.name)
-                        }
-                    }
+                    copyJarStream(zf.getInputStream(classesJar))
                 }
             }
 
-            // 2. The core's runtime libraries, so the jar is self-sufficient.
+            // 2. Plain java-library modules (BlackReflection's runtime mirrors).
+            plainJars.each { jar ->
+                if (!jar.exists()) {
+                    throw new GradleException("Missing jar: ${jar}\nRun :black-reflection:jar first.")
+                }
+                copyJarStream(new FileInputStream(jar))
+            }
+
+            // 3. The core's runtime libraries, so the jar is self-sufficient.
             configurations.bcoreRuntimeLibs.resolvedConfiguration.resolvedArtifacts.each { art ->
                 def file = art.file
                 if (!file.name.endsWith('.jar')) return
-                new java.util.zip.ZipInputStream(new FileInputStream(file)).withCloseable { zis ->
-                    def entry
-                    while ((entry = zis.nextEntry) != null) {
-                        copyEntry(zis, entry.name)
-                    }
-                }
+                copyJarStream(new FileInputStream(file))
             }
         }
 

@@ -6,8 +6,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import com.hello.sandbox.SandBoxCore;
-import com.hello.sandbox.entity.pm.InstallResult;
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.entity.pm.InstallResult;
 
 /**
  * The launch sequence, in the same order the reference loader used:
@@ -19,11 +19,11 @@ import com.hello.sandbox.entity.pm.InstallResult;
  * </ol>
  *
  * <p>Cloning is a single core call: {@code installPackageAsUser} copies the APK
- * <em>and</em> the package's OBB expansion files into the sandbox, so this class
- * no longer touches storage at all.</p>
+ * into the sandbox, so this class never touches storage itself. There is no OBB
+ * step: the game ships as one APK with no expansion file.</p>
  *
- * <p>Every core call goes through {@link SandBoxCore}. There is no activation
- * step: the core is a licence-free build and sets itself up in
+ * <p>Every core call goes through {@link BlackBoxCore}. There is no activation
+ * step: the core carries no licence gate and sets itself up in
  * {@code BoxApplication.attachBaseContext}.</p>
  *
  * <p>Launch itself waits 3 s (the reference showed a loading animation for that
@@ -85,7 +85,7 @@ public class LaunchController {
         final boolean inSandbox;
         final boolean onDevice;
         try {
-            inSandbox = SandBoxCore.get().isInstalled(packageName, USER_ID);
+            inSandbox = BlackBoxCore.get().isInstalled(packageName, USER_ID);
             onDevice = isInstalledOnDevice();
         } catch (Throwable t) {
             Log.e(TAG, "state resolution failed", t);
@@ -115,15 +115,14 @@ public class LaunchController {
     /**
      * Step 2 — clone the device install into the sandbox, then launch.
      *
-     * <p>No OBB handling here on purpose: the core's install copies the
-     * package's expansion files into the sandbox as part of the same operation
-     * (see {@code BObbInstaller}).</p>
+     * <p>No OBB handling anywhere: the game ships as a single APK with no
+     * expansion file, so the installer only has to copy the package.</p>
      */
     private void installGame() {
         emit(State.INSTALLING, context.getString(R.string.status_installing));
         mainHandler.postDelayed(() -> {
             try {
-                InstallResult result = SandBoxCore.get()
+                InstallResult result = BlackBoxCore.get()
                         .installPackageAsUser(packageName, USER_ID);
                 if (result != null && !result.success) {
                     Log.e(TAG, "installPackageAsUser failed: " + result.msg);
@@ -146,7 +145,7 @@ public class LaunchController {
         mainHandler.postDelayed(() -> {
             final boolean started;
             try {
-                started = SandBoxCore.get().launchApk(packageName, USER_ID);
+                started = BlackBoxCore.get().launchApk(packageName, USER_ID);
             } catch (Throwable t) {
                 Log.e(TAG, "launchApk threw", t);
                 fail(context.getString(R.string.error_install_failed));

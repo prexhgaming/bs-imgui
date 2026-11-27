@@ -20,8 +20,10 @@ if (hasSigning) {
 
 android {
     namespace 'com.zyn.bs'
-    compileSdk 34
-    buildToolsVersion '34.0.0'
+    // 36 to match :Bcore: its AAR metadata pins minCompileSdk 36, so a lower
+    // compileSdk here is a hard build failure, not a warning.
+    compileSdk 36
+    buildToolsVersion '36.1.0'
     ndkVersion '27.0.12077973'
 
     defaultConfig {
@@ -66,7 +68,13 @@ android {
     buildTypes {
         debug {
             debuggable true
-            minifyEnabled false
+            // R8 is ON for debug as well, because debug is the build type CI
+            // ships and signs. The core keeps ITSELF through
+            // Bcore/consumer-rules.pro (AGP merges it in); our own code is
+            // deliberately shrunk and renamed (see proguard-rules.pro).
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // Sign debug builds with OUR key, not the default debug keystore.
             // Same signature as release means a debug build installs as an
             // update over an existing install instead of conflicting with it.
@@ -98,8 +106,9 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        // 17 to match :Bcore and :black-reflection, which are both built at 17.
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     packagingOptions {

@@ -1,8 +1,8 @@
 name: Android Build
 
 # Builds and signs the loader APK with Gradle. Gradle drives both native builds
-# itself (ndk-build for app/src/main/jni, CMake for the :Bcore engine), so the
-# native libs are compiled as part of the normal app build.
+# itself (ndk-build for app/src/main/jni and for the :Bcore engine), so the
+# native libs are compiled as part of the normal app build. No CMake involved.
 #
 # Only `assembleDebug` is built: the debug build type is configured to use the
 # release signing key, so the artifact is a debuggable APK signed with OUR
@@ -22,6 +22,8 @@ on:
     paths:
       - 'app/**'
       - 'Bcore/**'
+      - 'black-reflection/**'
+      - 'compiler/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -30,6 +32,8 @@ on:
     paths:
       - 'app/**'
       - 'Bcore/**'
+      - 'black-reflection/**'
+      - 'compiler/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -47,9 +51,8 @@ env:
   # Must match ndkVersion in app/build.gradle.
   # r26+ is required: Application.mk sets APP_SUPPORT_FLEXIBLE_PAGE_SIZES.
   NDK_VERSION: 27.0.12077973
-  # Must match the CMake AGP 8.1 expects for :Bcore's externalNativeBuild.
-  CMAKE_VERSION: 3.22.1
-  GRADLE_VERSION: '8.5'
+  # Must match the AGP 8.13.2 / compileSdk 36 toolchain the core expects.
+  GRADLE_VERSION: '8.14.5'
   LOG_FILE: build.log
 
 jobs:
@@ -101,7 +104,7 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
-      - name: Install Android NDK, CMake and SDK
+      - name: Install Android NDK and SDK
         run: |
           set -euo pipefail
           SDKMANAGER="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
@@ -109,14 +112,13 @@ jobs:
             SDKMANAGER="$(command -v sdkmanager)"
           fi
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          # CMake is required by :Bcore's externalNativeBuild (src/main/cpp).
+          # No CMake any more: the payload and the core engine are both
+          # ndk-build projects now. compileSdk 36 needs platform + build-tools 36.
           "$SDKMANAGER" --install \
             "ndk;${NDK_VERSION}" \
-            "cmake;${CMAKE_VERSION}" \
-            "platforms;android-34" \
-            "build-tools;34.0.0"
+            "platforms;android-36" \
+            "build-tools;36.1.0"
           echo "NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${NDK_VERSION}"
-          echo "CMake at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/cmake/${CMAKE_VERSION}"
 
       # `tee` keeps the full output on disk for the Telegram upload while it
       # still streams live to the Actions log. pipefail is what makes the step
@@ -166,6 +168,15 @@ jobs:
           fi
           printf '%s\n' "$CERTS" | grep 'certificate DN'
 
+          # Both native libs must be inside the APK: the payload and the engine.
+          for lib in lib/armeabi-v7a/libzyn-bs.so lib/armeabi-v7a/libblackbox.so; do
+            if ! unzip -l "$apk" | grep -q "$lib"; then
+              echo "::error::$lib is missing from $apk"
+              exit 1
+            fi
+          done
+          echo "native libs: libzyn-bs.so + libblackbox.so (armeabi-v7a)"
+
           # Ship it under a stable, versioned name rather than app-debug.apk.
           # sed (not grep -P) so this also works with BusyBox grep.
           VERSION="$(sed -n "s/.*versionName[[:space:]]*'\([^']*\)'.*/\1/p" app/build.gradle | head -n1)"
@@ -194,7 +205,7 @@ jobs:
           JAR_OUT="dist/bcore-all-${GITHUB_RUN_NUMBER}.jar"
           cp dist/bcore-all.jar "$JAR_OUT"
           # Sanity check: the jar must actually contain the core, not just deps.
-          ENTRIES="$(unzip -l "$JAR_OUT" | grep -c 'com/hello/sandbox/' || true)"
+          ENTRIES="$(unzip -l "$JAR_OUT" | grep -c 'top/niunaijun/blackbox/' || true)"
           if [ "${ENTRIES:-0}" -lt 100 ]; then
             echo "::error::$JAR_OUT has only $ENTRIES core classes"
             exit 1
