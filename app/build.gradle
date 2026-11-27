@@ -102,12 +102,6 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    repositories {
-        flatDir {
-            dirs 'libs'
-        }
-    }
-
     packagingOptions {
         exclude 'META-INF/DEPENDENCIES'
         exclude 'META-INF/LICENSE'
