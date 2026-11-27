@@ -8,6 +8,11 @@ android {
 
     namespace "top.niunaijun.android_mirror"
 
+    // Expose these AIDL interfaces to dependent modules: Bcore's
+    // IBAccountManagerService.aidl imports android.accounts.IAccountManagerResponse.
+    aidlPackageWhiteList "android/app/IServiceConnection.aidl"
+    aidlPackageWhiteList "android/accounts/IAccountManagerResponse.aidl"
+
     defaultConfig {
         minSdkVersion 21
         targetSdkVersion rootProject.ext.targetSdkVersion

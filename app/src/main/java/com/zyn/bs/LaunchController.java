@@ -7,23 +7,20 @@ import android.os.Looper;
 import android.util.Log;
 
 import com.hello.sandbox.SandBoxCore;
-import com.hello.sandbox.core.env.BEnvironment;
 import com.hello.sandbox.entity.pm.InstallResult;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
 
 /**
  * The launch sequence, in the same order the reference loader used:
  *
  * <ol>
  *   <li>already cloned inside the sandbox → launch</li>
- *   <li>installed on the device → clone it into the sandbox, copy OBB, then launch</li>
+ *   <li>installed on the device → clone it into the sandbox, then launch</li>
  *   <li>not installed anywhere → error</li>
  * </ol>
+ *
+ * <p>Cloning is a single core call: {@code installPackageAsUser} copies the APK
+ * <em>and</em> the package's OBB expansion files into the sandbox, so this class
+ * no longer touches storage at all.</p>
  *
  * <p>Every core call goes through {@link SandBoxCore}. There is no activation
  * step: the core is a licence-free build and sets itself up in
@@ -115,7 +112,13 @@ public class LaunchController {
         }
     }
 
-    /** Step 2 — clone the device install into the sandbox, copy OBB, then launch. */
+    /**
+     * Step 2 — clone the device install into the sandbox, then launch.
+     *
+     * <p>No OBB handling here on purpose: the core's install copies the
+     * package's expansion files into the sandbox as part of the same operation
+     * (see {@code BObbInstaller}).</p>
+     */
     private void installGame() {
         emit(State.INSTALLING, context.getString(R.string.status_installing));
         mainHandler.postDelayed(() -> {
@@ -132,7 +135,6 @@ public class LaunchController {
                 fail(context.getString(R.string.error_install_failed));
                 return;
             }
-            copyObbIfNeeded();
             launchGame();
         }, 2000L);
     }
@@ -158,67 +160,6 @@ public class LaunchController {
             emit(State.RUNNING, context.getString(R.string.status_running));
             mainHandler.postDelayed(NativeBridge::load, PAYLOAD_DELAY_MS);
         }, LAUNCH_DELAY_MS);
-    }
-
-    /**
-     * Copies {@code main.<n>.<pkg>.obb} from the device's real OBB folder into
-     * the sandbox's virtual SD card — the same "only if missing" rule as the
-     * reference.
-     *
-     * <p>The guest sees {@code /storage/emulated/0/Android/...} redirected onto
-     * {@link BEnvironment#getExternalUserDir(int)}, so that is where the file has
-     * to land. Resolving it through the core (instead of hardcoding the old
-     * {@code vSdcard} mirror the reference used) keeps it correct if the core
-     * moves its sandbox root.</p>
-     */
-    private void copyObbIfNeeded() {
-        final File sandboxObb;
-        try {
-            sandboxObb = new File(
-                    new File(BEnvironment.getExternalUserDir(USER_ID), "Android/obb"),
-                    packageName);
-        } catch (Throwable t) {
-            Log.w(TAG, "could not resolve the sandbox OBB directory", t);
-            return;
-        }
-        if (hasObb(sandboxObb)) {
-            return;
-        }
-        File deviceObb = new File("/storage/emulated/0/Android/obb/" + packageName);
-        File[] sources = deviceObb.listFiles(
-                (dir, name) -> name.matches("main\\.\\d+\\." + packageName + "\\.obb"));
-        if (sources == null || sources.length == 0) {
-            return;
-        }
-        File source = sources[0];
-        File destination = new File(sandboxObb, source.getName());
-        try {
-            copyFile(source, destination);
-        } catch (Exception e) {
-            Log.w(TAG, "OBB copy failed", e);
-        }
-    }
-
-    private boolean hasObb(File folder) {
-        File[] files = folder.listFiles(
-                (dir, name) -> name.matches("main\\.\\d+\\." + packageName + "\\.obb"));
-        return files != null && files.length > 0;
-    }
-
-    private static void copyFile(File source, File destination) throws Exception {
-        File parent = destination.getParentFile();
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw new IllegalStateException("cannot create " + parent);
-        }
-        try (InputStream in = new FileInputStream(source);
-             OutputStream out = new FileOutputStream(destination)) {
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = in.read(buffer)) > 0) {
-                out.write(buffer, 0, read);
-            }
-            out.flush();
-        }
     }
 
     private void fail(String message) {

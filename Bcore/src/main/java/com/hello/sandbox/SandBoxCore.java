@@ -28,6 +28,7 @@ import com.hello.sandbox.core.GmsCore;
 import com.hello.sandbox.core.env.BEnvironment;
 import com.hello.sandbox.core.system.DaemonService;
 import com.hello.sandbox.core.system.ServiceManager;
+import com.hello.sandbox.core.system.pm.BObbInstaller;
 import com.hello.sandbox.core.system.user.BUserHandle;
 import com.hello.sandbox.core.system.user.BUserInfo;
 import com.hello.sandbox.entity.pm.InstallOption;
@@ -232,6 +233,24 @@ public class SandBoxCore extends ClientConfiguration {
   public InstallResult installPackageAsUser(File apk, int userId) {
     return getBPackageManager()
         .installPackageAsUser(apk.getAbsolutePath(), InstallOption.installByStorage(), userId);
+  }
+
+  /**
+   * Copies a package's OBB expansion files into the sandbox.
+   *
+   * <p>{@link #installPackageAsUser(String, int)} already does this as part of the
+   * install, so this is only needed when the OBBs arrive afterwards — e.g. the
+   * package is already cloned and the user downloads its data file later.</p>
+   *
+   * @return how many files were copied; existing ones are never overwritten
+   */
+  public int installObb(String packageName, int userId) {
+    return BObbInstaller.install(packageName, userId);
+  }
+
+  /** Deletes a package's sandboxed OBB files. */
+  public void uninstallObb(String packageName, int userId) {
+    BObbInstaller.uninstall(packageName, userId);
   }
 
   public InstallResult installPackageAsUser(Uri apk, int userId) {

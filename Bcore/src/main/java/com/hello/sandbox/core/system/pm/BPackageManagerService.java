@@ -541,6 +541,16 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
           // todo
         }
 
+        // Only drop the expansion files when the package is leaving for good: a
+        // per-user uninstall keeps the app data around for the other users.
+        if (removeApp) {
+          try {
+            BObbInstaller.uninstall(packageName, userId);
+          } catch (Throwable t) {
+            Slog.w(TAG, "OBB cleanup failed for " + packageName, t);
+          }
+        }
+
         if (removeApp) {
           mSettings.removePackage(packageName);
           mComponentResolver.removeAllComponents(ps.pkg);
@@ -579,6 +589,15 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         }
         mSettings.removePackage(packageName);
         mComponentResolver.removeAllComponents(ps.pkg);
+
+        // The package is gone for every user, so its expansion files go too.
+        try {
+          for (Integer userId : ps.getUserIds()) {
+            BObbInstaller.uninstall(packageName, userId);
+          }
+        } catch (Throwable t) {
+          Slog.w(TAG, "OBB cleanup failed for " + packageName, t);
+        }
       }
     }
   }
@@ -731,6 +750,19 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
       mComponentResolver.removeAllComponents(bPackageSettings.pkg);
       mComponentResolver.addAllComponents(bPackageSettings.pkg);
       mSettings.scanPackage(aPackage.packageName);
+
+      // Expansion files are part of "installed" as far as the guest is concerned:
+      // copy the package's OBBs into the sandbox now so nothing has to do it later.
+      // Non-fatal — a game without OBB, or an unreadable source folder, still installs.
+      try {
+        int obbs = BObbInstaller.install(aPackage.packageName, userId);
+        if (obbs > 0) {
+          Slog.d(TAG, "copied " + obbs + " OBB file(s) for " + aPackage.packageName);
+        }
+      } catch (Throwable t) {
+        Slog.w(TAG, "OBB install failed for " + aPackage.packageName, t);
+      }
+
       onPackageInstalled(bPackageSettings.pkg.packageName, userId);
       return result;
     } catch (Throwable t) {
