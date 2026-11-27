@@ -96,7 +96,7 @@ jobs:
           echo "keystore -> $STORE_FILE ($(wc -c < "$STORE_FILE") bytes)"
           grep -E '^[[:space:]]*(storeFile|keyAlias)' signing.properties
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -106,6 +106,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
+          # NEVER restore a cached Gradle User Home. A restored home can make
+          # Gradle treat :Bcore's tasks as UP-TO-DATE and reuse stale outputs,
+          # which silently ships an old engine while every source change looks
+          # applied. Correctness beats a ~40 s cache win here.
+          cache-disabled: true
 
       - name: Install Android NDK and SDK
         run: |
@@ -135,12 +140,16 @@ jobs:
             echo "== gradle $(gradle --version 2>/dev/null | grep -m1 '^Gradle' || echo '?') =="
             echo "== ndk: ${NDK_VERSION} =="
             grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' app/src/main/jni/Application.mk || true
+            # Fingerprint the engine so a stale build is visible in the log: this
+            # hash changes whenever ANY file under Bcore/src changes.
+            echo "== engine: $(find Bcore/src -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1 | cut -c1-16) ($(find Bcore/src -type f | wc -l) files) =="
             echo "== started: $(date -u +%FT%TZ) =="
             echo
           } | tee "$LOG_FILE"
 
+          # --no-build-cache: no task output may be reused from a previous build.
           gradle assembleRelease bcoreJar \
-            --no-daemon 2>&1 | tee -a "$LOG_FILE"
+            --no-build-cache --no-daemon 2>&1 | tee -a "$LOG_FILE"
 
       # Fails loudly if the APK came out with the default debug key instead of
       # ours, instead of shipping something that cannot update a real install.

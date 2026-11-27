@@ -1,0 +1,121 @@
+name: Clean caches
+
+# Manual maintenance workflow. Two reasons it exists:
+#
+#   1. `gradle/actions/setup-gradle` restores the Gradle User Home from the
+#      Actions cache. A restored home can make Gradle consider :Bcore's tasks
+#      UP-TO-DATE and reuse old outputs, so engine changes get silently ignored
+#      and a stale engine is shipped. Wiping every cache removes that trap.
+#      (The build workflow now runs cache-disabled, so this is the cleanup for
+#      entries written before that change.)
+#   2. Optionally deletes every workflow run — i.e. all run history, logs and
+#      artifacts — so nothing old lingers next to a fresh build.
+#
+# Nothing in the repository is touched: only Actions caches and run records.
+on:
+  workflow_dispatch:
+    inputs:
+      delete_runs:
+        description: 'Also delete EVERY workflow run (history, logs, artifacts). This run itself is skipped.'
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: clean-caches
+  cancel-in-progress: false
+
+jobs:
+  clean:
+    name: wipe caches and runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      CURRENT: ${{ github.run_id }}
+
+    steps:
+      - name: Delete all Actions caches
+        run: |
+          set -uo pipefail
+          deleted=0
+          failed=0
+          # The API caps per_page at 100, so keep listing until the list is empty
+          # (deleting shifts the pagination, hence a fresh list every round).
+          for round in $(seq 1 100); do
+            ids="$(gh api -H 'Accept: application/vnd.github+json' \
+              "/repos/${REPO}/actions/caches?per_page=100" \
+              --jq '.actions_caches[].id' 2>/dev/null || true)"
+            [ -z "$ids" ] && break
+            for id in $ids; do
+              if gh api -X DELETE "/repos/${REPO}/actions/caches/${id}" > /dev/null 2>&1; then
+                deleted=$((deleted + 1))
+              else
+                failed=$((failed + 1))
+              fi
+            done
+          done
+          echo "caches deleted: ${deleted} (failed: ${failed})"
+          {
+            echo "### Caches"
+            echo ""
+            echo "- deleted: **${deleted}**"
+            echo "- failed: **${failed}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs that are still in progress cannot be deleted; cancel them first so
+      # the delete step can get rid of everything.
+      - name: Cancel in-progress runs
+        if: inputs.delete_runs
+        run: |
+          set -uo pipefail
+          ids="$(gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/${REPO}/actions/runs?status=in_progress&per_page=100" \
+            --jq ".workflow_runs[] | select(.id != ${CURRENT}) | .id" 2>/dev/null || true)"
+          n=0
+          for id in $ids; do
+            if gh api -X POST "/repos/${REPO}/actions/runs/${id}/cancel" > /dev/null 2>&1; then
+              n=$((n + 1))
+            fi
+          done
+          echo "cancelled ${n} in-progress run(s)"
+          # Give the cancellations a moment to land before deleting.
+          sleep 20
+
+      - name: Delete all workflow runs
+        if: inputs.delete_runs
+        run: |
+          set -uo pipefail
+          deleted=0
+          failed=0
+          for round in $(seq 1 300); do
+            ids="$(gh api -H 'Accept: application/vnd.github+json' \
+              "/repos/${REPO}/actions/runs?per_page=100" \
+              --jq ".workflow_runs[] | select(.id != ${CURRENT}) | .id" 2>/dev/null || true)"
+            [ -z "$ids" ] && break
+            progressed=0
+            for id in $ids; do
+              if gh api -X DELETE "/repos/${REPO}/actions/runs/${id}" > /dev/null 2>&1; then
+                deleted=$((deleted + 1))
+                progressed=1
+              else
+                failed=$((failed + 1))
+              fi
+            done
+            # Nothing could be removed this round (e.g. only undeletable runs
+            # are left) -> stop instead of spinning.
+            [ "$progressed" -eq 0 ] && break
+          done
+          echo "runs deleted: ${deleted} (failed: ${failed})"
+          {
+            echo ""
+            echo "### Workflow runs"
+            echo ""
+            echo "- deleted: **${deleted}**"
+            echo "- failed: **${failed}**"
+            echo "- skipped (this run): \`${CURRENT}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
