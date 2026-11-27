@@ -67,8 +67,11 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
   `libblackbox.so` (engine). CI asserts both are inside the APK.
 - AIDL imports are declared with `aidlPackagedList` — the older `aidlPackageWhiteList` spelling was
   removed in AGP 8.
-- `app/src/main/jni/Dobby/libraries/*/libdobby.a` are prebuilt and **must stay committed**
-  (`.gitignore` has an explicit `!` negation for them, since it ignores `*.a` generally).
+- The prebuilt static libs are **exceptions to `.gitignore`'s blanket `*.a`/`*.so` rules** and must
+  stay committed: the payload's `app/src/main/jni/Dobby/libraries/**/*.a` and the engine's
+  `Bcore/src/main/cpp/Dobby/<abi>/libdobby.a` (the second one was missed at first and CI failed with
+  `Android.mk:dobby: LOCAL_SRC_FILES points to a missing file`). After touching `.gitignore`, check with
+  `git check-ignore -v Bcore/src/main/cpp/Dobby/armeabi-v7a/libdobby.a`.
 - Build outputs `app/src/main/jni/libs/`, `app/src/main/jni/obj/`, `dist/` and `*/build/` are git-ignored.
 
 ## Sandbox core — how we drive it

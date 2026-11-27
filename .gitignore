@@ -30,6 +30,8 @@ local.properties
 # ...except the prebuilt static libs the NDK build links against
 # (see app/src/main/jni/Android.mk)
 !app/src/main/jni/Dobby/libraries/**/*.a
+# ...and the engine's own prebuilt Dobby, linked into libblackbox.so.
+!Bcore/src/main/cpp/Dobby/**/*.a
 *.ilk
 *.dSYM/
 *.app/
