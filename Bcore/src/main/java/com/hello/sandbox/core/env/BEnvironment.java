@@ -119,6 +119,16 @@ public class BEnvironment {
         getExternalUserDir(userId), String.format(Locale.CHINA, "Android/data/%s", packageName));
   }
 
+  /** The guest's {@code /storage/emulated/<userId>/Android/obb} directory. */
+  public static File getExternalObbDir(int userId) {
+    return new File(getExternalUserDir(userId), "Android/obb");
+  }
+
+  /** Where a package's OBB files must live to be visible inside the sandbox. */
+  public static File getExternalObbDir(String packageName, int userId) {
+    return new File(getExternalObbDir(userId), packageName);
+  }
+
   public static File getDataDir(String packageName, int userId) {
     return new File(
         sVirtualRoot, String.format(Locale.CHINA, "data/user/%d/%s", userId, packageName));
