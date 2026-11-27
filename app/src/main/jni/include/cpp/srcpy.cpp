@@ -247,6 +247,15 @@ _ESP_BONES = [
     ('rfoot',     'biped R Foot'),
 ]
 
+# The C++ box needs a real bottom edge. Without a foot bone it falls back to a
+# distance estimate that is far too tall, so these are fetched for every
+# on-screen entity, independently of the skeleton toggle.
+_BOX_BONES = [
+    ('pelvis',  'biped Pelvis'),
+    ('lfoot',   'biped L Foot'),
+    ('rfoot',   'biped R Foot'),
+]
+
 def _ab_safe(inst):
     return True
 
@@ -428,6 +437,14 @@ def EspUpdate(*_, **__):
             bones = {}
             if is_on_screen:
                 bones["head"] = [head_screen.x, head_screen.y]
+                # Always fetch the bones the box needs. Gating these behind
+                # bESP_Skeleton made the box fall back to a distance estimate
+                # whenever the skeleton was off, which drew boxes several times
+                # taller than the player.
+                for key, bone_name in _BOX_BONES:
+                    s = get_bone_screen(model, bone_name)
+                    if s:
+                        bones[key] = s
 
             if _bSkeleton and is_on_screen:
                 for key, bone_name in _ESP_BONES:

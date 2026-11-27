@@ -234,7 +234,7 @@ void SetDefaultConfig() {
     sync_bool["bAIM_IgnoreBots"] = false;
     sync_float["fAIM_SnapStrength"] = 3.0f; sync_float["fAIM_BulletSpeed"] = 650.f;
     sync_float["fAIM_Fov"] = 120.f; sync_float["fAIM_MaxDist"] = 400.f;
-    sync_int["iAIM_Trigger"] = 2; sync_int["iAIM_TargetBone"] = 1;
+    sync_int["iAIM_Trigger"] = 3; sync_int["iAIM_TargetBone"] = 1;
     sync_float["fESP_MaxDistance"] = 500.f; sync_float["fESP_RadarSize"] = 160.f;
     sync_float["fESP_RadarRange"] = 400.f;
     sync_bool["bItemESP"] = false; sync_float["fItemESP_MaxDist"] = 100.f;

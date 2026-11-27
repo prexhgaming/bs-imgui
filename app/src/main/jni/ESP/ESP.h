@@ -228,20 +228,42 @@ static inline const char* ClassTag(const Entity& e) {
 
 // ==================== BONE HELPER ====================
 namespace BoneHelper {
+    // Screen-space position of the feet, i.e. the bottom edge of the box.
+    // Prefers a real foot bone, then extrapolates from the pelvis/chest, and
+    // only falls back to a perspective estimate as a last resort.
     static bool GetFootPos(const Entity& e, const ImVec2& head, ImVec2& foot) {
         if (!Utils::IsValidVec2(head) || head.y <= 0.f) return false;
-        ImVec2 lf, rf, sp;
+
+        ImVec2 lf, rf;
         if (e.GetBonePosition(BONE_LFOOT, lf) && Utils::IsInBounds(lf)) { foot = lf; return true; }
         if (e.GetBonePosition(BONE_RFOOT, rf) && Utils::IsInBounds(rf)) { foot = rf; return true; }
-        if (e.GetBonePosition(BONE_SPINE, sp) && Utils::IsInBounds(sp)) {
-            foot = ImVec2(head.x, sp.y + (sp.y - head.y) * 0.5f);
+
+        // Extrapolate from a torso bone. The multipliers are body proportions:
+        // head->pelvis is ~45% of the standing height, head->spine ~40% and
+        // head->chest ~30%, so each one is scaled back to a full body height.
+        // These give a tight box even when the feet are off screen.
+        struct { BoneIdx bone; float factor; } extrap[] = {
+            { BONE_PELVIS, 2.2f },   // biped Pelvis
+            { BONE_SPINE,  2.5f },   // biped Spine
+            { BONE_SPINE1, 3.3f },   // biped Spine1 (chest)
+        };
+        for (const auto& ex : extrap) {
+            ImVec2 p;
+            if (!e.GetBonePosition(ex.bone, p)) continue;
+            if (!Utils::IsInBounds(p)) continue;
+            float dy = p.y - head.y;
+            if (dy <= 2.f) continue;                    // degenerate projection
+            foot = ImVec2(head.x, head.y + dy * ex.factor);
             return true;
         }
-        // Fallback: estimate the height from the distance so the box never
-        // collapses when no foot bone is available.
+
+        // Last resort: perspective estimate. Apparent height scales with
+        // screen height and falls off with distance. The old constant (3500/d
+        // clamped to 260px) drew boxes several times too tall, which is what
+        // made every box look oversized.
         float d = std::max(e.distance, 1.f);
-        float estH = (50.f * 70.f) / d;
-        estH = std::clamp(estH, 8.f, 260.f);
+        float estH = (1.5f * (float)Height) / d;
+        estH = std::clamp(estH, 8.f, (float)Height * 0.6f);
         foot = ImVec2(head.x, head.y + estH);
         return true;
     }
@@ -588,6 +610,7 @@ namespace SkeletonESP {
         const int cnt = (e.distance < 40.f) ? 15 : (e.distance < 80.f) ? 9 : 6;
 
         ImVec2 a, b;
+        int drawn = 0;
         for (int i = 0; i < cnt; i++) {
             if (!e.GetBonePosition(full[i][0], a)) continue;
             if (!e.GetBonePosition(full[i][1], b)) continue;
@@ -596,6 +619,33 @@ namespace SkeletonESP {
             if (!Utils::IsInBounds(a) || !Utils::IsInBounds(b)) continue;
             Utils::Line(dl, a, b, dark, thick + 1.4f);   // outline for contrast
             Utils::Line(dl, a, b, col,  thick);
+            drawn++;
+        }
+
+        // Safety net: the full bone set is only sent while bESP_Skeleton is on
+        // in Python, so if that flag never made it across, the loop above has
+        // nothing to draw. The box bones (pelvis + both feet) are always in the
+        // payload, which is enough for a coarse but useful spine and legs.
+        if (drawn == 0) {
+            ImVec2 torso;
+            bool haveTorso = e.GetBonePosition(BONE_PELVIS, torso);
+            if (!haveTorso) haveTorso = e.GetBonePosition(BONE_SPINE1, torso);
+            if (!haveTorso) haveTorso = e.GetBonePosition(BONE_SPINE,  torso);
+            if (haveTorso && Utils::IsInBounds(torso) &&
+                e.GetBonePosition(BONE_HEAD, a) && Utils::IsInBounds(a)) {
+                Utils::Line(dl, a, torso, dark, thick + 1.4f);
+                Utils::Line(dl, a, torso, col,  thick);
+                // Legs down to whichever feet we have.
+                ImVec2 feet[2];
+                if (e.GetBonePosition(BONE_LFOOT, feet[0]) && Utils::IsInBounds(feet[0])) {
+                    Utils::Line(dl, torso, feet[0], dark, thick + 1.4f);
+                    Utils::Line(dl, torso, feet[0], col,  thick);
+                }
+                if (e.GetBonePosition(BONE_RFOOT, feet[1]) && Utils::IsInBounds(feet[1])) {
+                    Utils::Line(dl, torso, feet[1], dark, thick + 1.4f);
+                    Utils::Line(dl, torso, feet[1], col,  thick);
+                }
+            }
         }
 
         ImVec2 headP;
