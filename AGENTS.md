@@ -74,11 +74,38 @@ here, licence-free, for every ABI.
 - API in use by `LaunchController`: `SandBoxCore.get().isInstalled(pkg, userId)`,
   `installPackageAsUser(pkg, userId)` → `InstallResult` (public `success` / `msg`), and
   `launchApk(pkg, userId)` → boolean. User slot is `0`.
-- OBB: the guest's `/storage/emulated/0/Android/...` is redirected onto
-  `BEnvironment.getExternalUserDir(userId)`, so OBB files must be copied to
-  `<that>/Android/obb/<pkg>/`. Resolve it through `BEnvironment`, never hardcode a path.
+- OBB: **the SDK copies expansion files itself — the app has no OBB code at all.**
+  `BObbInstaller` (`core/system/pm`) runs at the end of a successful install, and
+  `BPackageManagerService` calls `BObbInstaller.uninstall` on uninstall. It looks in the device's
+  real `Android/obb/<pkg>/` (`Environment.getExternalStorageDirectory()`) and copies any
+  `*.obb` into `BEnvironment.getExternalObbDir(pkg, userId)`
+  (`<getExternalUserDir(userId)>/Android/obb/<pkg>/`) with a 1 MiB buffer -- expansion files are
+  multi-GB, so never route them through `FileUtils.copyFile`'s 1 KB loop.
+  `SandBoxCore.get().installObb(pkg, userId)` / `uninstallObb(...)` re-run or drop the copy on demand.
+  Resolve paths through `BEnvironment`, never hardcode them.
 - Core keep rules ship as `Bcore/consumer-rules.pro` (AGP merges them into the app automatically).
   `app/proguard-rules.pro` deliberately contains no core packages.
+
+## Pitfalls that have already cost a build
+- **`.gitignore` must keep the venv rule as `/env/`, not `env/`.** A bare `env/` also matches the
+  core's Java package `Bcore/src/main/java/com/hello/sandbox/core/env/`, so `BEnvironment.java`,
+  `AppSystemEnv.java` and `VirtualRuntime.java` silently stop being committed and CI dies with a
+  cascade of `package com.hello.sandbox.core.env does not exist` — even though the files are sitting
+  right there locally. After touching `.gitignore`, verify with
+  `git check-ignore -v Bcore/src/main/java/com/hello/sandbox/core/env/BEnvironment.java`.
+- **One core tree, always.** `Bcore/src/main/java/` must contain only `com/`; a leftover
+  `top/niunaijun/blackbox/` tree means two cores got merged. Check with
+  `find Bcore -path '*niunaijun/blackbox*'`. When swapping in a source drop, diff against the
+  *immediate* parent commit (`<commit>^`), not an older one, or a cleanup will delete files that
+  legitimately landed in between.
+- **No project-level repositories.** `settings.gradle` uses `RepositoriesMode.PREFER_SETTINGS`, so a
+  `repositories { }`/`flatDir { }` block in a module's build file is a hard failure. Note that a
+  `repositories { }` written *inside* `android { }` is not an AGP property — Groovy falls through to
+  the project's `repositories` and triggers exactly this error.
+- **`fake_dlfcn.cpp` supports x86_64** via the shared 64-bit (`Elf64_*`) branch, together with
+  aarch64. All four ABIs build; keep `abiFilters` in `Bcore/build.gradle` complete or the core stops
+  being reusable by a 64-bit host. The APK itself stays `armeabi-v7a`-only via the app's `abiFilters`.
+
 
 ## Reusing the core jar
 - `gradle bcoreJar` writes `dist/bcore-all.jar`: the four modules' classes plus their small runtime
