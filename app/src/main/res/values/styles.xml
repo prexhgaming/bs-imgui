@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LoaderTheme" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="android:windowBackground">@color/loader_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/loader_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
+</resources>

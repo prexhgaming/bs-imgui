@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BS·KILLER</string>
+    <string name="brand">BS·KILLER</string>
+    <string name="brand_subtitle">SAND BOX ENGINE</string>
+
+    <!-- The game title is never hardcoded: it is read from PackageManager. -->
+    <string name="game_subtitle">IMMERSIVE SANDBOX EXPERIENCE</string>
+
+    <string name="status_ready">READY TO PLAY</string>
+    <string name="status_installing">INSTALLING SANDBOX…</string>
+    <string name="status_launching">ENTERING SANDBOX…</string>
+    <string name="status_running">GAME RUNNING</string>
+    <string name="status_not_installed">GAME NOT INSTALLED</string>
+    <string name="status_error">LAUNCH FAILED</string>
+
+    <string name="tap_hint">Tap to enter the sandbox</string>
+    <string name="tap_hint_install">Install %1$s to continue</string>
+    <string name="tap_hint_running">Tap to launch again</string>
+    <string name="hint_installing">Preparing the sandbox, please wait…</string>
+    <string name="hint_launching">Starting the game…</string>
+
+    <string name="launch_game">LAUNCH GAME</string>
+    <string name="install_game">INSTALL GAME</string>
+
+    <string name="error_not_installed">The game is not installed on this device.</string>
+    <string name="error_install_failed">Could not install the game into the sandbox.</string>
+    <string name="error_no_store">No Play Store app found on this device.</string>
+</resources>

@@ -1,17 +1,27 @@
-name: Android NDK Build
+name: Android Build
 
-# Builds cpp/ (ndk-build) and reports to Telegram:
-#   - on failure  -> the full build log (ndk-build.log)
-#   - on success  -> dist/libs.zip, laid out as <abi>/<lib>.so
+# Builds and signs the loader APK with Gradle. Gradle drives ndk-build itself
+# (app/src/main/jni/Android.mk), so the native lib is compiled as part of the
+# normal app build.
+#
+# Reporting:
+#   - failure -> the full build log (build.log) to Telegram
+#   - success -> the signed release APK to Telegram
 on:
   push:
     branches: [main]
     paths:
-      - 'cpp/**'
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
       - '.github/workflows/android-build.yml'
   pull_request:
     paths:
-      - 'cpp/**'
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
       - '.github/workflows/android-build.yml'
   workflow_dispatch:
 
@@ -23,78 +33,122 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # r26+ is required: Application.mk sets APP_SUPPORT_FLEXIBLE_PAGE_SIZES (16KB pages).
-  NDK_VERSION: r27c
-  PROJECT_DIR: cpp
-  LOG_FILE: ndk-build.log
-  LIB_ZIP: dist/libs.zip
+  # Must match ndkVersion in app/build.gradle.
+  # r26+ is required: Application.mk sets APP_SUPPORT_FLEXIBLE_PAGE_SIZES.
+  NDK_VERSION: 27.0.12077973
+  GRADLE_VERSION: '8.5'
+  LOG_FILE: build.log
 
 jobs:
   build:
-    name: ndk-build (${{ github.ref_name }})
+    name: gradle assemble (${{ github.ref_name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Android NDK
-        id: ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: ${{ env.NDK_VERSION }}
-          add-to-path: true
-          local-cache: true
+      # Gradle reads signing.properties from the project root and resolves
+      # storeFile relative to it, so both files land at the repo root.
+      # Secrets are unavailable on fork PRs -> warn and build unsigned.
+      - name: Decode signing material
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          SIGNING_PROPS_B64: ${{ secrets.SIGNING_PROPERTIES_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_B64:-}" ] || [ -z "${SIGNING_PROPS_B64:-}" ]; then
+            echo "::warning::Signing secrets missing (fork PR?) - release APK will be unsigned"
+            exit 0
+          fi
 
-      # `tee` keeps the full output on disk for the Telegram upload while it still
-      # streams live to the Actions log. pipefail is what makes the step fail on a
-      # compile error instead of on tee's exit code.
-      - name: Build with ndk-build (tee to log)
+          printf '%s' "$SIGNING_PROPS_B64" | base64 -d > signing.properties
+          # The keystore filename comes from signing.properties (storeFile=).
+          STORE_FILE="$(sed -n 's/^[[:space:]]*storeFile[[:space:]]*=[[:space:]]*//p' signing.properties | tr -d '\r' | head -n1)"
+          if [ -z "$STORE_FILE" ]; then
+            echo "::error::signing.properties has no storeFile entry"
+            exit 1
+          fi
+
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$STORE_FILE"
+          chmod 600 "$STORE_FILE" signing.properties
+
+          echo "keystore -> $STORE_FILE ($(wc -c < "$STORE_FILE") bytes)"
+          grep -E '^[[:space:]]*(storeFile|keyAlias)' signing.properties
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install "ndk;${NDK_VERSION}" "platforms;android-34" "build-tools;34.0.0"
+          echo "NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${NDK_VERSION}"
+
+      # `tee` keeps the full output on disk for the Telegram upload while it
+      # still streams live to the Actions log. pipefail is what makes the step
+      # fail on a compile error instead of on tee's exit code.
+      - name: Build with Gradle (tee to log)
         id: build
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -o pipefail
           {
-            echo "== ndk-build =="
-            ndk-build --version 2>&1 | head -3
-            echo "== Application.mk ABI(s) =="
-            grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' Application.mk || true
+            echo "== gradle $(gradle --version 2>/dev/null | grep -m1 '^Gradle' || echo '?') =="
+            echo "== ndk: ${NDK_VERSION} =="
+            grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' app/src/main/jni/Application.mk || true
             echo "== started: $(date -u +%FT%TZ) =="
             echo
-          } | tee ../"$LOG_FILE"
+          } | tee "$LOG_FILE"
 
-          ndk-build \
-            NDK_PROJECT_PATH=. \
-            APP_BUILD_SCRIPT=Android.mk \
-            NDK_APPLICATION_MK=Application.mk \
-            -j"$(nproc)" 2>&1 | tee -a ../"$LOG_FILE"
+          gradle assembleDebug assembleRelease \
+            --no-daemon --stacktrace 2>&1 | tee -a "$LOG_FILE"
 
-      # Collects every built .so and zips it with the ABI directory preserved,
-      # so the archive root is exactly: armeabi-v7a/libzyn-bs.so (and so on per ABI).
-      - name: Package libs by architecture
-        id: pack
+      # Fails loudly if the release APK came out unsigned, instead of shipping a
+      # useless artifact when the signing config was not picked up.
+      - name: Verify release APK is signed
+        id: verify
         if: success()
         run: |
           set -euo pipefail
-          mapfile -t sos < <(find "$PROJECT_DIR/libs" -type f -name '*.so' | sort)
-          if [ "${#sos[@]}" -eq 0 ]; then
-            echo "::error::ndk-build reported success but produced no .so under $PROJECT_DIR/libs"
+          apk="$(find app/build/outputs/apk/release -name '*.apk' | head -n1)"
+          if [ -z "$apk" ]; then
+            echo "::error::No release APK produced"
             exit 1
           fi
-          printf 'built: %s\n' "${sos[@]}"
 
+          # apksigner is authoritative (it parses the signing block, unlike a
+          # META-INF grep which only sees the optional v1 signature).
+          APKSIGNER="$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -name apksigner -type f | sort | tail -n1)"
+          [ -x "$APKSIGNER" ] || { echo "::error::apksigner not found"; exit 1; }
+
+          "$APKSIGNER" verify --verbose --print-certs "$apk"
+
+          # Ship it under a stable, versioned name rather than app-release.apk.
+          # sed (not grep -P) so this also works with BusyBox grep.
+          VERSION="$(sed -n "s/.*versionName[[:space:]]*'\([^']*\)'.*/\1/p" app/build.gradle | head -n1)"
+          APK_OUT="dist/bskiller-${VERSION:-0.0.0}-${GITHUB_RUN_NUMBER}.apk"
           mkdir -p dist
-          rm -f "$LIB_ZIP"
-          ( cd "$PROJECT_DIR/libs" && zip -r "$GITHUB_WORKSPACE/$LIB_ZIP" . -x '*.d' '*.o' > /dev/null )
+          cp "$apk" "$APK_OUT"
 
-          echo "== $LIB_ZIP =="
-          unzip -l "$LIB_ZIP"
-
+          echo "signed APK: $APK_OUT ($(wc -c < "$APK_OUT") bytes)"
           {
-            echo "abis<<EOF"
-            for d in "$PROJECT_DIR"/libs/*/; do basename "$d"; done
-            echo "EOF"
+            echo "apk=$APK_OUT"
+            echo "apk_name=$(basename "$APK_OUT")"
+            echo "apk_bytes=$(wc -c < "$APK_OUT")"
           } >> "$GITHUB_OUTPUT"
 
       - name: Telegram - send build log (failure)
@@ -124,31 +178,32 @@ jobs:
             "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
           echo
 
-      - name: Telegram - send libs.zip (success)
+      - name: Telegram - send APK (success)
         if: success()
         continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ABIS: ${{ steps.pack.outputs.abis }}
         run: |
           set -uo pipefail
           if [ -z "${BOT_TOKEN:-}" ] || [ -z "${CHAT_ID:-}" ]; then
             echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID missing - skipping notification"
             exit 0
           fi
-          if [ ! -s "$LIB_ZIP" ]; then
-            echo "::warning::$LIB_ZIP missing - nothing to send"
+
+          APK="${{ steps.verify.outputs.apk }}"
+          if [ ! -s "$APK" ]; then
+            echo "::warning::$APK missing - nothing to send"
             exit 0
           fi
 
           curl -sS --fail-with-body \
             -F "chat_id=${CHAT_ID}" \
-            -F "document=@${LIB_ZIP};filename=libs-${GITHUB_RUN_NUMBER}.zip" \
+            -F "document=@${APK};filename=${{ steps.verify.outputs.apk_name }}" \
             -F "caption=✅ Build OK - ${GITHUB_REPOSITORY}
           ref: ${GITHUB_REF_NAME}  |  run: #${GITHUB_RUN_NUMBER}
           commit: ${GITHUB_SHA:0:7}
-          abi(s): $(echo "${ABIS:-?}" | tr '\n' ' ')" \
+          apk: ${{ steps.verify.outputs.apk_name }} (${{ steps.verify.outputs.apk_bytes }} bytes)" \
             "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
           echo
 
@@ -156,9 +211,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ndk-build-${{ github.run_number }}
+          name: loader-${{ github.run_number }}
           path: |
             ${{ env.LOG_FILE }}
-            ${{ env.LIB_ZIP }}
+            dist/*.apk
+            app/build/outputs/apk/**/*.apk
           if-no-files-found: warn
           retention-days: 14

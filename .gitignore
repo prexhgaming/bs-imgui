@@ -11,8 +11,12 @@ build/
 out/
 lib/
 # NDK (ndk-build) output — see .github/workflows/android-build.yml
-cpp/libs/
-cpp/obj/
+app/src/main/jni/libs/
+app/src/main/jni/obj/
+.gradle/
+local.properties
+.cxx/
+*.iml
 *.o
 *.obj
 *.a
@@ -23,8 +27,9 @@ cpp/obj/
 *.exe
 *.lib
 *.pdb
-# ...except the prebuilt static libs the NDK build links against (see cpp/Android.mk)
-!cpp/Dobby/libraries/**/*.a
+# ...except the prebuilt static libs the NDK build links against
+# (see app/src/main/jni/Android.mk)
+!app/src/main/jni/Dobby/libraries/**/*.a
 *.ilk
 *.dSYM/
 *.app/
@@ -70,6 +75,10 @@ temp/
 !.env.example
 *.pem
 *.key
+# Release signing material — injected by CI from repository secrets.
+signing.properties
+*.jks
+*.keystore
 
 # ---- OS / editor ----
 .DS_Store
@@ -86,3 +95,5 @@ desktop.ini
 .polydev/
 .base/
 uploads/
+# Extracted reference project (bcore source we took the launch flow from)
+bbref/
