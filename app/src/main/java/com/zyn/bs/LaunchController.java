@@ -6,35 +6,37 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import net_62v.external.MetaActivityManager;
+import net_62v.external.MetaApplicationInstaller;
+import net_62v.external.MetaStorageManager;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.entity.pm.InstallResult;
-
 /**
- * The bcore launch sequence, lifted from the reference loader's
- * {@code InstallActivity} and stripped of its dialogs so the new UI can drive
- * it. The order of operations is intentionally identical:
+ * The Mundo launch sequence, in the same order the reference loader used:
  *
  * <ol>
- *   <li>already inside the sandbox → launch</li>
- *   <li>installed on the device → install into bcore, copy OBB, then launch</li>
+ *   <li>already cloned inside the sandbox → launch</li>
+ *   <li>installed on the device → clone it into the sandbox, copy OBB, then launch</li>
  *   <li>not installed anywhere → error</li>
  * </ol>
  *
+ * <p>Every core call is a static entry point on {@code net_62v.external.*}; no
+ * activation/licence call is made anywhere in this class.</p>
+ *
  * <p>Launch itself waits 3 s (the reference showed a loading animation for that
- * long) and the payload hook fires 10 s later, mirroring
- * {@code FloatService.enableESP}.</p>
+ * long) and the payload hook fires 10 s later, mirroring the reference's ESP
+ * start.</p>
  */
 public class LaunchController {
 
     private static final String TAG = "LaunchController";
 
-    /** Delay before {@code launchApk}, matching the reference's dialog. */
+    /** Delay before {@code launchApp}, matching the reference's dialog. */
     private static final long LAUNCH_DELAY_MS = 3000L;
     /** Delay before the native payload hook, matching the reference's ESP start. */
     private static final long PAYLOAD_DELAY_MS = 10000L;
@@ -53,7 +55,6 @@ public class LaunchController {
 
     private final Context context;
     private final String packageName;
-    private final BlackBoxCore blackBoxCore;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Callback callback;
 
@@ -63,8 +64,6 @@ public class LaunchController {
         this.context = context.getApplicationContext();
         this.packageName = packageName;
         this.callback = callback;
-        this.blackBoxCore = BlackBoxCore.get();
-        this.blackBoxCore.doCreate();
     }
 
     public boolean isBusy() {
@@ -86,7 +85,7 @@ public class LaunchController {
         final boolean inSandbox;
         final boolean onDevice;
         try {
-            inSandbox = blackBoxCore.isInstalled(packageName, 0);
+            inSandbox = MetaActivityManager.isInnerPackageInstalled(packageName);
             onDevice = isInstalledOnDevice();
         } catch (Throwable t) {
             Log.e(TAG, "state resolution failed", t);
@@ -113,20 +112,17 @@ public class LaunchController {
         }
     }
 
-    /** Step 2 — install into bcore, copy OBB, then launch. */
+    /** Step 2 — clone the device install into the sandbox, copy OBB, then launch. */
     private void installGame() {
         emit(State.INSTALLING, context.getString(R.string.status_installing));
         mainHandler.postDelayed(() -> {
             try {
-                InstallResult result = blackBoxCore.installPackageAsUser(packageName, 0);
-                if (result == null || !result.success) {
-                    fail(result != null && result.msg != null
-                            ? result.msg
-                            : context.getString(R.string.error_install_failed));
-                    return;
-                }
+                // Returns a status code, but this build's convertResultToString()
+                // is a "Not Support." stub, so — exactly like the reference — a
+                // thrown exception is the only failure signal we can rely on.
+                MetaApplicationInstaller.cloneApp(packageName);
             } catch (Throwable t) {
-                Log.e(TAG, "installPackageAsUser failed", t);
+                Log.e(TAG, "cloneApp failed", t);
                 fail(context.getString(R.string.error_install_failed));
                 return;
             }
@@ -141,9 +137,9 @@ public class LaunchController {
 
         mainHandler.postDelayed(() -> {
             try {
-                blackBoxCore.launchApk(packageName, 0);
+                MetaActivityManager.launchApp(packageName);
             } catch (Throwable t) {
-                Log.e(TAG, "launchApk failed", t);
+                Log.e(TAG, "launchApp failed", t);
                 fail(context.getString(R.string.error_install_failed));
                 return;
             }
@@ -153,12 +149,21 @@ public class LaunchController {
     }
 
     /**
-     * Copies {@code main.<n>.<pkg>.obb} from shared storage into bcore's
-     * {@code SdCard} mirror — same paths and same "only if missing" rule as the
-     * reference implementation.
+     * Copies {@code main.<n>.<pkg>.obb} from shared storage into the sandboxed
+     * game's external storage — the same "only if missing" rule as the reference,
+     * with the destination resolved through {@code MetaStorageManager} instead of
+     * the old hardcoded {@code SdCard} mirror.
      */
     private void copyObbIfNeeded() {
-        final File sandboxObb = new File("/storage/emulated/0/SdCard/Android/obb/" + packageName);
+        final File sandboxObb;
+        try {
+            sandboxObb = new File(
+                    MetaStorageManager.obtainAppExternalStorageDir(packageName) + "/Android/obb",
+                    packageName);
+        } catch (Throwable t) {
+            Log.w(TAG, "could not resolve the sandbox OBB directory", t);
+            return;
+        }
         if (hasObb(sandboxObb)) {
             return;
         }

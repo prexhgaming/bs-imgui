@@ -27,7 +27,11 @@
             </intent-filter>
         </activity>
 
-        <!-- bcore's own components are merged in from Fixed-Update4.1.aar. -->
+        <!--
+            The Mundo core's components (MundoSupervisorProvider, the :stubN
+            process pool, MundoService/MundoReceiver, MundoSplashLauncher, ...)
+            are merged in from mundo-release.aar. Do not declare them here.
+        -->
     </application>
 
 </manifest>

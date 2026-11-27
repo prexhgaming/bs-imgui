@@ -13,9 +13,11 @@
 
 ## Project layout
 - Repo root **is** the Gradle source root (the app used to live in `loader/`, now flattened).
-- `app/` — the loader app module (`com.zyn.bs`), a bcore/BlackBox sandbox loader.
+- `app/` — the loader app module (`com.zyn.bs`), a Mundo (BlackBox fork) sandbox loader.
 - `app/src/main/jni/` — the native payload, an **ndk-build** project (`Android.mk` + `Application.mk`).
-- `app/libs/Fixed-Update4.1.aar` — bcore (BlackBox), unmodified; **must stay committed**.
+- `app/libs/mundo-release.aar` — the **Mundo** core (a BlackBox fork), unmodified; **must stay
+  committed**. It is self-contained: it ships its own manifest components (merged in by AGP), its own
+  consumer ProGuard rules (`proguard.txt`), and per-ABI `libzyluqeh.so` — including `armeabi-v7a`.
 - `app/src/main/assets/a7f3c9.bin` — AES-256-GCM encrypted wallpaper (see "Encrypted assets").
 
 ## Building
@@ -30,10 +32,25 @@
 - `app/src/main/jni/Dobby/libraries/*/libdobby.a` are prebuilt and **must stay committed** — `.gitignore`
   has an explicit `!` negation for them (it ignores `*.a` generally).
 - Build outputs `app/src/main/jni/libs/` and `app/src/main/jni/obj/` are git-ignored.
-- **`targetSdk` must stay 28** — bcore's reflected platform APIs are the pre-29 ones and break on
+- **`targetSdk` must stay 28** — the core's reflected platform APIs are the pre-29 ones and break on
   newer targets. The `ExpiredTargetSdkVersion` lint check is therefore disabled in `app/build.gradle`
   (`lint { disable ... ; checkReleaseBuilds false; abortOnError false }`); this is a sideloaded app,
   not a Play Store submission.
+
+## Sandbox core (Mundo) — how we drive it
+- Entry points are public statics in `net_62v.external.*`; engine internals live in `top.bienvenido.**`.
+- The core **bootstraps itself**: the AAR declares `MundoSupervisorProvider` and a pool of `:stubN`
+  processes, and those ContentProviders are created before `Application.onCreate`. So there is no
+  `doAttachBaseContext`/`doCreate` equivalent to call — `BoxApplication` is intentionally empty.
+- API in use: `MetaActivityManager.isInnerPackageInstalled(pkg)` / `isAppRunning(pkg, 0)` /
+  `launchApp(pkg)` / `killAppByPkg(pkg)`, `MetaApplicationInstaller.cloneApp(pkg)` /
+  `installAppByPath(path)`, `MetaStorageManager.obtainAppExternalStorageDir(pkg)`.
+- **Licensing is deliberately NOT used.** `MetaActivationManager.activateSdk(String)` only forwards a
+  key to the core's binder service, and every capability above works without it, so it is skipped.
+- `MetaApplicationInstaller.convertResultToString(int)` is a `"Not Support."` stub in this build, so
+  treat "no exception thrown" as success — that is what the reference app does too.
+- Inspect the AAR's API with `.polydev/inspect_aar.py <aar> <class-regex>` (reads `classes.jar` in
+  memory; extracting it fails on the core's absurdly long obfuscated class names).
 
 ## Signing
 - `signing.properties` + the `.jks` live at the **project root** (Gradle resolves `storeFile` relative to it).

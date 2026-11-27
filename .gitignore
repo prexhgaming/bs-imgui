@@ -95,5 +95,7 @@ desktop.ini
 .polydev/
 .base/
 uploads/
+# Uploaded third-party source archive — never commit (this repo is public).
+ptivatesrcaddmundo.zip
 # Extracted reference project (bcore source we took the launch flow from)
 bbref/

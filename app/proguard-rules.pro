@@ -5,18 +5,19 @@
 # Activity, services) are kept automatically by AGP, so they need no rule here.
 
 # ---------------------------------------------------------------------------
-# bcore (BlackBox) — a reflective virtualisation engine.
-# It resolves its own classes by name from a separate class loader at runtime,
-# so renaming them breaks it. Kept; our code is not.
+# Mundo core (the BlackBox fork our AAR is built from).
+#   net_62v.external.*  — the public facade this app calls directly.
+#   top.bienvenido.*    — the engine internals, resolved by name from a separate
+#                         class loader at runtime, so renaming them breaks it.
+# Both trees are kept; our own code is not.
 # ---------------------------------------------------------------------------
--keep class top.niunaijun.blackbox.** { *; }
--dontwarn top.niunaijun.blackbox.**
+-keep class net_62v.** { *; }
+-keep class top.bienvenido.** { *; }
+-dontwarn net_62v.**
+-dontwarn top.bienvenido.**
 
-# The blackreflection library is not bundled in the AAR; bcore's generated
-# reflection stubs reference it. Without these rules R8 fails the release build
-# with "Missing class top.niunaijun.blackreflection...".
--dontwarn top.niunaijun.blackreflection.**
--dontwarn black.**
+# mundo-release.aar also ships its own consumer rules, which already
+# "-dontwarn *" and keep the native-method holders plus MundoReflectionStub$**.
 
 # ---------------------------------------------------------------------------
 # JNI — native methods are resolved by their Java name, which must not change.
@@ -38,5 +39,4 @@
 
 # Silence warnings for optional/platform classes the dependencies probe for.
 -dontwarn org.lsposed.**
--dontwarn com.topjohnwu.superuser.**
 -dontwarn kotlin.**

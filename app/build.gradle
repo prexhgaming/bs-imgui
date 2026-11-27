@@ -76,7 +76,7 @@ android {
         }
         release {
             debuggable false
-            // Shrink + rename our own code. bcore is kept by proguard-rules.pro;
+            // Shrink + rename our own code. The core is kept by proguard-rules.pro;
             // manifest-declared components are kept automatically by AGP.
             minifyEnabled true
             shrinkResources true
@@ -88,7 +88,7 @@ android {
     }
 
     lint {
-        // bcore only behaves on targetSdk 28 (its reflected platform APIs are
+        // The core only behaves on targetSdk 28 (its reflected platform APIs are
         // the pre-29 ones), so "Google Play requires targetSdk 31+" is expected
         // here and must not fail the build. This is a sideloaded app, not a
         // Play Store submission.
@@ -124,9 +124,8 @@ android {
 }
 
 dependencies {
-    // bcore (BlackBox) — the reference's AAR, unmodified.
+    // The Mundo core (the BlackBox fork this loader is built on).
     implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'])
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.github.topjohnwu.libsu:core:3.1.1'
 }

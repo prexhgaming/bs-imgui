@@ -1,7 +1,7 @@
 # bs-imgui
 
-An Android sandbox **loader** built on [bcore / BlackBox](https://github.com/FBlackBox/BlackBox),
-with its own UI and its own native payload.
+An Android sandbox **loader** built on **Mundo** (a BlackBox fork) with its own UI, its own native
+payload, and no licensing/activation call.
 
 The app virtualizes a target game inside a sandbox process and launches it, so the game runs
 with the loader's hooks applied without touching the installed APK.
@@ -11,16 +11,16 @@ with the loader's hooks applied without touching the installed APK.
 ```
 .
 ├── app/                              # the loader app module (com.zyn.bs)
-│   ├── libs/Fixed-Update4.1.aar      # bcore (BlackBox), unmodified
-│   ├── proguard-rules.pro            # keeps bcore, obfuscates our own code
+│   ├── libs/mundo-release.aar        # Mundo core (BlackBox fork), unmodified
+│   ├── proguard-rules.pro            # keeps the core, obfuscates our own code
 │   └── src/main/
 │       ├── assets/a7f3c9.bin         # AES-256-GCM encrypted wallpaper
 │       ├── java/com/zyn/bs/
 │       │   ├── LauncherActivity.java # UI host + launch orchestration
-│       │   ├── LaunchController.java # bcore install → launch flow
+│       │   ├── LaunchController.java # clone → launch flow (Mundo)
 │       │   ├── GameConfig.java       # ← set the target package name here
 │       │   ├── GameResolver.java     # package name → label + icon
-│       │   ├── BoxApplication.java   # bcore init (attachBaseContext + doCreate)
+│       │   ├── BoxApplication.java   # host Application (core self-initialises)
 │       │   ├── NativeBridge.java     # JNI hook point for libzyn-bs.so
 │       │   ├── crypto/AssetCrypto.java
 │       │   └── ui/                   # LauncherView, PulseDots, CircleIcon
@@ -55,7 +55,7 @@ Requires JDK 17, Android SDK 34, and NDK `27.0.12077973` (r26+). The APK is sign
 signed with the project key rather than the default Android debug key. Without those files it falls
 back to the default debug key.
 
-`targetSdk` is pinned to **28** on purpose: bcore's reflected platform APIs are the pre-29 ones.
+`targetSdk` is pinned to **28** on purpose: the core's reflected platform APIs are the pre-29 ones.
 The `ExpiredTargetSdkVersion` lint check is disabled for that reason — this is a sideloaded app, not
 a Play Store submission.
 
