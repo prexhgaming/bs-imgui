@@ -25,8 +25,10 @@ import java.io.OutputStream;
  *   <li>not installed anywhere → error</li>
  * </ol>
  *
- * <p>Every core call is a static entry point on {@code net_62v.external.*}; no
- * activation/licence call is made anywhere in this class.</p>
+ * <p>Every core call is a static entry point on {@code net_62v.external.*}. The
+ * core must first be activated ({@link CoreActivation}) or it answers every one
+ * of those calls by refusing to start and popping its "not prepared" toast, so
+ * activation is re-checked here before each launch.</p>
  *
  * <p>Launch itself waits 3 s (the reference showed a loading animation for that
  * long) and the payload hook fires 10 s later, mirroring the reference's ESP
@@ -82,6 +84,13 @@ public class LaunchController {
     }
 
     private void resolveAndRun() {
+        // First launch after a reboot may race the boot-time activation (it needs
+        // a network round trip), which is what produces the core's "not prepared"
+        // toast, so settle it before touching the sandbox.
+        if (!CoreActivation.isPrepared()) {
+            CoreActivation.activate();
+        }
+
         final boolean inSandbox;
         final boolean onDevice;
         try {

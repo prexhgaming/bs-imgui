@@ -44,12 +44,22 @@
 - Entry points are public statics in `net_62v.external.*`; engine internals live in `top.bienvenido.**`.
 - The core **bootstraps itself**: the AAR declares `MundoSupervisorProvider` and a pool of `:stubN`
   processes, and those ContentProviders are created before `Application.onCreate`. So there is no
-  `doAttachBaseContext`/`doCreate` equivalent to call — `BoxApplication` is intentionally empty.
+  `doAttachBaseContext`/`doCreate` equivalent to call.
+- **Activation IS required — do not try to skip it.** Every core operation is gated on an internal
+  "prepared" flag that Java cannot see: it is a JNI round trip
+  (`MNative.ioctl(43012, null)` → `Boolean.parseBoolean(result)`). While it is `false` the core pops
+  a toast ("SDK aún no está bien preparado…", hardcoded in Spanish in `top.bienvenido.date_24323.B2`)
+  and refuses the launch. The native lib sets that flag: `libzyluqeh.so` exports
+  `Mundo_Activate_SDK(JNIEnv*, const char*)`, reached via
+  `MetaActivationManager.activateSdk(String)`. `CoreActivation` holds the key, `BoxApplication`
+  activates at boot, and `LaunchController` retries before each launch (activation needs a network
+  round trip, so a device that was offline at boot would otherwise fail forever).
+- The key in `CoreActivation.LICENSE` was recovered from the private reference source, where it is
+  built byte-by-byte inside a `new Object() { public String toString() { … } }` trick (20 bytes from
+  `(byte)(intConstant >>> shift)`). It is a static account key, identical at both call sites.
 - API in use: `MetaActivityManager.isInnerPackageInstalled(pkg)` / `isAppRunning(pkg, 0)` /
   `launchApp(pkg)` / `killAppByPkg(pkg)`, `MetaApplicationInstaller.cloneApp(pkg)` /
   `installAppByPath(path)`, `MetaStorageManager.obtainAppExternalStorageDir(pkg)`.
-- **Licensing is deliberately NOT used.** `MetaActivationManager.activateSdk(String)` only forwards a
-  key to the core's binder service, and every capability above works without it, so it is skipped.
 - `MetaApplicationInstaller.convertResultToString(int)` is a `"Not Support."` stub in this build, so
   treat "no exception thrown" as success — that is what the reference app does too.
 - Inspect the AAR's API with `.polydev/inspect_aar.py <aar> <class-regex>` (reads `classes.jar` in
