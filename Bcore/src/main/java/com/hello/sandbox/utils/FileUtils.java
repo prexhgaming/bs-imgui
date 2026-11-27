@@ -220,11 +220,18 @@ public class FileUtils {
     }
   }
 
+  /**
+   * Copy chunk for stream copies. The old 1 KB buffer turned an install into tens of
+   * thousands of read/write pairs; 64 KB is the usual sweet spot for both internal and
+   * emulated storage.
+   */
+  private static final int COPY_BUFFER_SIZE = 64 * 1024;
+
   public static void copyFile(InputStream inputStream, File target) {
     FileOutputStream outputStream = null;
     try {
       outputStream = new FileOutputStream(target);
-      byte[] data = new byte[4096];
+      byte[] data = new byte[COPY_BUFFER_SIZE];
       int len;
       while ((len = inputStream.read(data)) != -1) {
         outputStream.write(data, 0, len);
@@ -247,14 +254,32 @@ public class FileUtils {
       FileChannel iChannel = inputStream.getChannel();
       FileChannel oChannel = outputStream.getChannel();
 
-      ByteBuffer buffer = ByteBuffer.allocate(1024);
-      while (true) {
-        buffer.clear();
-        int r = iChannel.read(buffer);
-        if (r == -1) break;
-        buffer.limit(buffer.position());
-        buffer.position(0);
-        oChannel.write(buffer);
+      // transferTo maps to sendfile/copy_file_range where the kernel supports it, so the
+      // payload APK never round-trips through the JVM heap. It is allowed to move less
+      // than requested, hence the loop.
+      long size = iChannel.size();
+      long position = 0;
+      while (position < size) {
+        long moved = iChannel.transferTo(position, size - position, oChannel);
+        if (moved <= 0) break;
+        position += moved;
+      }
+      // Defensive fallback: a few file systems answer transferTo with 0 moved bytes.
+      // Finish the rest with a plain buffered copy rather than silently truncating.
+      if (position < size) {
+        iChannel.position(position);
+        ByteBuffer buffer = ByteBuffer.allocate(COPY_BUFFER_SIZE);
+        while (position < size) {
+          buffer.clear();
+          int r = iChannel.read(buffer);
+          if (r == -1) break;
+          buffer.limit(buffer.position());
+          buffer.position(0);
+          while (buffer.hasRemaining()) {
+            oChannel.write(buffer);
+          }
+          position += r;
+        }
       }
     } finally {
       closeQuietly(inputStream);

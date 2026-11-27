@@ -55,11 +55,45 @@ public class BoxApplication extends Application {
                     return false;
                 }
             });
+            // Bring the core's services up now, on a background thread, so the package
+            // scan / user / storage / jar-extraction work overlaps with the rest of
+            // process start-up instead of blocking the first frame. Core calls made
+            // meanwhile simply wait for it (BlackBoxSystem.startup() blocks concurrent
+            // callers), so nothing can observe a half-initialised core.
+            warmCoreAsync();
         } catch (Throwable t) {
             // A broken core must not make the loader unlaunchable — the UI can
             // still show the game and explain the failure.
             Log.e(TAG, "core attach failed", t);
         }
+    }
+
+    /**
+     * Starts the sandbox core on a background thread.
+     *
+     * <p>{@code BlackBoxSystem.startup()} registers every system service and does the initial
+     * package scan, user read, storage set-up and jar extraction. Previously that all ran
+     * synchronously on the main thread on the first core call, i.e. inside {@code onCreate},
+     * which delayed the first frame. Running it here lets it overlap with the remainder of
+     * process set-up.
+     *
+     * <p>Deliberately fire-and-forget: a failure is non-fatal because the first real core call
+     * retries the same work, and the blocking guard in {@code startup()} keeps concurrent
+     * callers safe.
+     */
+    private void warmCoreAsync() {
+        Thread warm = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    SandBoxCore.get().warmUp();
+                } catch (Throwable t) {
+                    Log.w(TAG, "core warm-up failed; it will retry on first use", t);
+                }
+            }
+        }, "sandbox-warmup");
+        warm.setDaemon(true);
+        warm.start();
     }
 
     @Override

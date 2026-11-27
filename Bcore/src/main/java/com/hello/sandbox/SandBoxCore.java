@@ -26,6 +26,7 @@ import com.hello.sandbox.app.configuration.AppLifecycleCallback;
 import com.hello.sandbox.app.configuration.ClientConfiguration;
 import com.hello.sandbox.core.GmsCore;
 import com.hello.sandbox.core.env.BEnvironment;
+import com.hello.sandbox.core.system.BlackBoxSystem;
 import com.hello.sandbox.core.system.DaemonService;
 import com.hello.sandbox.core.system.ServiceManager;
 import com.hello.sandbox.core.system.pm.BObbInstaller;
@@ -166,6 +167,23 @@ public class SandBoxCore extends ClientConfiguration {
     if (!isServerProcess()) {
       ServiceManager.initBlackManager();
     }
+  }
+
+  /**
+   * Pre-warms the core, so the host app can overlap it with its own start-up.
+   *
+   * {@link com.hello.sandbox.core.system.BlackBoxSystem#startup()} brings up every system
+   * service (package scan, users, storage, jar extraction) and originally ran only on the
+   * first {@code getService()} call - i.e. synchronously on the main thread inside this
+   * app's {@code onCreate}, delaying the first frame. Kicking it off from a background
+   * thread during {@code attachBaseContext} lets that work overlap with process set-up and
+   * the first UI frame instead.
+   *
+   * Safe from any thread and safe to call repeatedly: concurrent callers block until the
+   * first one finishes rather than racing for a half-initialised core.
+   */
+  public void warmUp() {
+    BlackBoxSystem.getSystem().startup();
   }
 
   public static Object mainThread() {

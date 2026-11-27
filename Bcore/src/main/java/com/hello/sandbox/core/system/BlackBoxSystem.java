@@ -44,8 +44,33 @@ public class BlackBoxSystem {
     return sBlackBoxSystem;
   }
 
+  private static final Object STARTUP_LOCK = new Object();
+  private static boolean sStartupRunning;
+
+  /**
+   * Brings the core up: all system services registered, package/user settings loaded.
+   *
+   * <p>Callers block until the first call finishes. The previous version set the flag
+   * <i>before</i> doing the work, so a second thread - such as a warm-up thread racing the first
+   * SDK call - was handed a half-initialised core and a null service instead of waiting for it.
+   * Re-entrant calls from inside the work still return immediately, as before.
+   */
   public void startup() {
-    if (isStartup.getAndSet(true)) return;
+    if (isStartup.get()) return;
+    synchronized (STARTUP_LOCK) {
+      if (isStartup.get() || sStartupRunning) return;
+      sStartupRunning = true;
+      try {
+        doStartup();
+        isStartup.set(true);
+      } finally {
+        sStartupRunning = false;
+      }
+    }
+  }
+
+  /** The actual start-up work; always call through {@link #startup()}. */
+  private void doStartup() {
     BEnvironment.load();
 
     mServices.add(BPackageManagerService.get());
