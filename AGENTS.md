@@ -15,13 +15,19 @@
 - Repo root **is** the Gradle source root (the app used to live in `loader/`, now flattened).
 - `app/` — the loader app module (`com.zyn.bs`).
 - `app/src/main/jni/` — the native payload, an **ndk-build** project (`Android.mk` + `Application.mk`).
-- `Bcore/` — the **sandbox core, built from source** as Gradle library modules (Apache-2.0):
-  - `Bcore/` — the engine (`com.hello.sandbox`), `src/main/cpp` is a **CMake** project producing
-    `libsandbox.so`.
-  - `Bcore/black-fake/` — `top.niunaijun.black_fake`
-  - `Bcore/black-hook/` — `top.niunaijun.jnihook`
-  - `Bcore/android-mirror/` — `top.niunaijun.android_mirror` (deliberately a submodule of `Bcore/`,
-    like the other two)
+- `Bcore/` — the **sandbox core, built from source** as a **single** Gradle library module
+  (Apache-2.0). It used to be four (`Bcore` plus `android-mirror`, `black-fake`, `black-hook` as
+  submodules of it); they were merged because every class already lived in its final package, so the
+  merge needed no source or import change. `Bcore/src/main/java/` now holds all four package roots:
+  - `com/hello/sandbox/**` — the engine; `src/main/cpp` is a **CMake** project producing `libsandbox.so`.
+  - `black/android/**` — the BlackReflection mirrors. The `BR*` classes are **generated** from these
+    by the `BlackReflection:compiler` annotation processor configured in `Bcore/build.gradle`; never
+    commit them.
+  - `android/**` — black-fake's platform stubs. These deliberately shadow the real `android.jar`
+    classes, which is how the sandbox replaces them.
+  - `top/niunaijun/jnihook/**` — the JNI reflection hook.
+  - `src/main/aidl/` mirrors that split: both `com/**` and `android/**` live in this one module's
+    AIDL source set.
 - `app/src/main/assets/a7f3c9.bin` — AES-256-GCM encrypted wallpaper (see "Encrypted assets").
 
 ### Why the core is source, not an AAR
@@ -34,8 +40,8 @@ here, licence-free, for every ABI.
 - Two native builds, both driven by Gradle: `externalNativeBuild.ndkBuild` for the payload and
   `externalNativeBuild.cmake` for the core engine. **One command builds everything:**
   `gradle assembleDebug` (CI builds debug only).
-- `gradle assembleDebug bcoreJar` additionally emits `dist/bcore-all.jar` — the four core modules
-  merged into one reusable jar (see "Reusing the core jar").
+- `gradle assembleDebug bcoreJar` additionally emits `dist/bcore-all.jar` — the core packed into one
+  reusable jar (see "Reusing the core jar").
 - **CMake 3.22.1** must be installed (`cmake;3.22.1` via sdkmanager) for `:Bcore`.
 - No `gradlew` in the repo — the wrapper jar isn't committed. CI gets `gradle` from
   `gradle/actions/setup-gradle@v3` (`GRADLE_VERSION: 8.5`). Run `gradle wrapper` locally to generate one.
@@ -65,7 +71,12 @@ here, licence-free, for every ABI.
 - **Two lifecycle calls, in this order** (both in `BoxApplication`):
   `doAttachBaseContext(context, ClientConfiguration)` from `attachBaseContext`, then `doCreate()`
   from `onCreate`. `ClientConfiguration.getHostPackageName()` is the only abstract method; this app
-  also overrides `isHideRoot`, `isHideXposed` (both true) and `isEnableDaemonService` (false).
+  also overrides `isHideRoot` (true) and `isEnableDaemonService` (false).
+- **The core is warmed up off the main thread.** `attachBaseContext` calls `SandBoxCore.get().warmUp()`
+  on a background thread ("core-warmup") so the package scan, jar extraction and service start-up
+  overlap the rest of process start instead of blocking the first frame.
+  `BlackBoxSystem.startup()` is the single entry point and blocks concurrent callers, so a UI call
+  arriving mid-warm-up waits rather than seeing a half-initialised core — don't make it non-blocking.
 - **There is no licensing.** `MetaActivationManager.activateSdk()` takes no key, does no network I/O
   and just returns; `isLicenseActivated()` is unconditionally true. `LicenseVerifier` (the old HTTP
   client) was deleted, the two gates in `SandBoxCore.launchApk` / `installPackageAsUser` were removed,
@@ -83,6 +94,12 @@ here, licence-free, for every ABI.
   multi-GB, so never route them through `FileUtils.copyFile`'s 1 KB loop.
   `SandBoxCore.get().installObb(pkg, userId)` / `uninstallObb(...)` re-run or drop the copy on demand.
   Resolve paths through `BEnvironment`, never hardcode them.
+- **There is no Xposed support, and it is not coming back.** The whole subsystem was removed: the
+  module-manager service, its AIDL and the module entities, the PineXposed loader in
+  `BActivityThread`, `Hook/VMClassLoaderHook` (with the `hideXposed` JNI entry point), and the SDK
+  surface (`installXPModule`, `uninstallXPModule`, `isXPEnable`, `setXPEnable`, `isXposedModule`,
+  `isModuleEnable`, `getInstalledXPModules`, `isHideXposed`). `pine:core` must stay — `jnihook` needs
+  it — but do not reintroduce `pine:xposed`.
 - Core keep rules ship as `Bcore/consumer-rules.pro` (AGP merges them into the app automatically).
   `app/proguard-rules.pro` deliberately contains no core packages.
 
@@ -93,8 +110,9 @@ here, licence-free, for every ABI.
   cascade of `package com.hello.sandbox.core.env does not exist` — even though the files are sitting
   right there locally. After touching `.gitignore`, verify with
   `git check-ignore -v Bcore/src/main/java/com/hello/sandbox/core/env/BEnvironment.java`.
-- **One core tree, always.** `Bcore/src/main/java/` must contain only `com/`; a leftover
-  `top/niunaijun/blackbox/` tree means two cores got merged. Check with
+- **One core tree, always.** Since the module merge `Bcore/src/main/java/` legitimately holds four
+  package roots: `com/`, `black/`, `android/` and `top/`. A *second* `com/hello/sandbox` or a
+  leftover `top/niunaijun/blackbox/` tree means two cores got merged. Check with
   `find Bcore -path '*niunaijun/blackbox*'`. When swapping in a source drop, diff against the
   *immediate* parent commit (`<commit>^`), not an older one, or a cleanup will delete files that
   legitimately landed in between.
@@ -108,8 +126,8 @@ here, licence-free, for every ABI.
 
 
 ## Reusing the core jar
-- `gradle bcoreJar` writes `dist/bcore-all.jar`: the four modules' classes plus their small runtime
-  deps (FreeReflection, BlackReflection, Pine core/xposed). AndroidX/framework classes are never bundled.
+- `gradle bcoreJar` writes `dist/bcore-all.jar`: the `:Bcore` module's classes plus its small runtime
+  deps (FreeReflection, BlackReflection, Pine core). AndroidX/framework classes are never bundled.
 - It contains **Java only** — `libsandbox.so` still comes from the CMake build. The jar saves
   recompiling ~450 Java files, not the native step.
 - To consume it: put the jar in `app/libs/` and replace `implementation project(':Bcore')` with
