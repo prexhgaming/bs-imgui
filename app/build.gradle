@@ -127,11 +127,10 @@ android {
 }
 
 dependencies {
-    // The sandbox core, built from source as a single module (:Bcore). This
-    // replaces the prebuilt mundo-release.aar: the core is
-    // now licence-free and compiles every ABI. If you would rather skip the
-    // core rebuild, drop dist/bcore-all.jar into app/libs instead and swap this
-    // line for implementation files('libs/bcore-all.jar').
+    // The sandbox core, consumed as a normal Gradle library module (:Bcore).
+    // This replaces the prebuilt mundo-release.aar: the core is licence-free and
+    // compiles every ABI. Deliberately NOT a flat jar: a prebuilt
+    // bcore-all.jar in libs/ would shadow source changes and ship a stale engine.
     implementation project(':Bcore')
 
     implementation 'com.google.android.material:material:1.9.0'

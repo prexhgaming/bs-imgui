@@ -9,13 +9,12 @@ name: Android Build
 # one whose classes are actually renamed; the release build type is also signed
 # with OUR certificate, so the APK installs as an update over an existing one.
 #
-# `bcoreJar` additionally packs the sandbox core (:Bcore, a single module) into
-# dist/bcore-all.jar, which can be
-# dropped into app/libs/ later to skip compiling the core from scratch.
+# `:Bcore` is consumed as a plain Gradle library module (no flat jar, no
+# bcoreJar task), so every build compiles the engine from the sources on disk.
 #
 # Reporting:
 #   - failure -> the full build log (build.log) to Telegram
-#   - success -> the signed APK AND bcore-all.jar to Telegram
+#   - success -> the signed APK to Telegram
 on:
   push:
     branches: [main]
@@ -148,7 +147,7 @@ jobs:
           } | tee "$LOG_FILE"
 
           # --no-build-cache: no task output may be reused from a previous build.
-          gradle assembleRelease bcoreJar \
+          gradle assembleRelease \
             --no-build-cache --no-daemon 2>&1 | tee -a "$LOG_FILE"
 
       # Fails loudly if the APK came out with the default debug key instead of
@@ -214,33 +213,6 @@ jobs:
             echo "apk_bytes=$(wc -c < "$APK_OUT")"
           } >> "$GITHUB_OUTPUT"
 
-      # The reusable core jar. Renamed per-run so a downloaded copy is traceable
-      # to the commit it was built from.
-      - name: Package core jar
-        id: corejar
-        if: success()
-        run: |
-          set -euo pipefail
-          if [ ! -s dist/bcore-all.jar ]; then
-            echo "::error::dist/bcore-all.jar was not produced by bcoreJar"
-            exit 1
-          fi
-          JAR_OUT="dist/bcore-all-${GITHUB_RUN_NUMBER}.jar"
-          cp dist/bcore-all.jar "$JAR_OUT"
-          # Sanity check: the jar must actually contain the core, not just deps.
-          ENTRIES="$(unzip -l "$JAR_OUT" | grep -c 'top/niunaijun/blackbox/' || true)"
-          if [ "${ENTRIES:-0}" -lt 100 ]; then
-            echo "::error::$JAR_OUT has only $ENTRIES core classes"
-            exit 1
-          fi
-          echo "core jar: $JAR_OUT ($(wc -c < "$JAR_OUT") bytes, $ENTRIES core classes)"
-          {
-            echo "jar=$JAR_OUT"
-            echo "jar_name=$(basename "$JAR_OUT")"
-            echo "jar_bytes=$(wc -c < "$JAR_OUT")"
-            echo "jar_classes=$ENTRIES"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Telegram - send build log (failure)
         if: failure()
         continue-on-error: true
@@ -268,7 +240,7 @@ jobs:
             "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
           echo
 
-      - name: Telegram - send APK and core jar (success)
+      - name: Telegram - send APK (success)
         if: success()
         continue-on-error: true
         env:
@@ -282,7 +254,6 @@ jobs:
           fi
 
           APK="${{ steps.verify.outputs.apk }}"
-          JAR="${{ steps.corejar.outputs.jar }}"
 
           if [ -s "$APK" ]; then
             curl -sS --fail-with-body \
@@ -298,21 +269,6 @@ jobs:
             echo "::warning::$APK missing - not sending the APK"
           fi
 
-          if [ -s "$JAR" ]; then
-            curl -sS --fail-with-body \
-              -F "chat_id=${CHAT_ID}" \
-              -F "document=@${JAR};filename=${{ steps.corejar.outputs.jar_name }}" \
-              -F "caption=📦 Sandbox core (reusable) - run #${GITHUB_RUN_NUMBER}
-          commit: ${GITHUB_SHA:0:7}
-          jar: ${{ steps.corejar.outputs.jar_name }} (${{ steps.corejar.outputs.jar_bytes }} bytes)
-          core classes: ${{ steps.corejar.outputs.jar_classes }}
-          Drop into app/libs and depend on it to skip rebuilding the core." \
-              "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
-            echo
-          else
-            echo "::warning::$JAR missing - not sending the core jar"
-          fi
-
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -321,7 +277,6 @@ jobs:
           path: |
             ${{ env.LOG_FILE }}
             dist/*.apk
-            dist/*.jar
             app/build/outputs/apk/**/*.apk
           if-no-files-found: warn
           retention-days: 14

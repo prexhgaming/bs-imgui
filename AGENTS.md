@@ -72,7 +72,8 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
   payload and for the engine. **There is no CMake anywhere** — do not install or wire CMake back in.
 - **One command builds everything:** `gradle assembleRelease` (CI builds release only — see
   "Minify, shrink and keep rules" for why release and not debug).
-- `gradle assembleRelease bcoreJar` additionally emits `dist/bcore-all.jar` (see "Reusing the core jar").
+- **No flat jar.** `:Bcore` is consumed as a normal Gradle library module; there is no `bcoreJar`
+  task and nothing is prebuilt into `libs/`. See "No flat jar" below for why.
 - Toolchain (keep `app`, `Bcore` and CI in sync): **AGP 8.13.2**, Gradle **8.14.5** (CI's
   `GRADLE_VERSION`), `compileSdk 36`, `buildToolsVersion 36.1.0`, **Java 21** (JDK 21 in CI —
   `Bcore` compiles at 21), `minSdk 24`, `targetSdk 28`. `compileSdk` must stay 36: the engine's AAR
@@ -174,15 +175,17 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
   `repositories { }`/`flatDir { }` block in a module's build file is a hard failure. JitPack must stay
   in `settings.gradle`: the engine depends on `com.github.tiann:FreeReflection`.
 
-## Reusing the core jar
-- `gradle bcoreJar` writes `dist/bcore-all.jar`: `:Bcore`'s classes plus `:black-reflection` and the
-  small runtime deps (`FreeReflection`, `toml4j`). AndroidX/framework classes are never bundled, and
-  `:compiler` is excluded (annotation processor, compile-time only).
-- It contains **Java only** — `libblackbox.so` still comes from the ndk-build step. The jar saves
-  recompiling the engine's few hundred Java files, not the native build.
-- To consume it: put the jar in `app/libs/` and replace `implementation project(':Bcore')` with
-  `implementation files('libs/bcore-all.jar')`.
-- CI uploads it to Telegram next to the APK as `dist/bcore-all-<run_number>.jar`.
+## No flat jar (do not reintroduce one)
+- The core is **only** ever consumed as `implementation project(':Bcore')`. There is no `bcoreJar`
+  task, no `dist/bcore-all.jar`, and no `app/libs/*.jar` dependency.
+- Why: a prebuilt jar shadows the sources. Gradle sees the jar as an input that never changes, so
+  engine edits appear applied while the old engine keeps shipping — the exact "stale engine" trap.
+  With a project dependency, `:Bcore`'s sources are inputs and any edit forces a rebuild.
+- Related hardening, all of which exists for the same reason: CI runs `setup-gradle` with
+  `cache-disabled: true`, passes `--no-build-cache`, and logs an engine fingerprint
+  (`== engine: <sha256 of Bcore/src> (N files) ==`) so a stale build is visible in the log.
+- If you need to skip compiling the core, use Gradle's own mechanisms (`--offline`, a local maven
+  repo), not a hand-copied jar in `libs/`.
 
 ## Signing
 - `signing.properties` + the `.jks` live at the **project root** (Gradle resolves `storeFile` relative to it).
@@ -203,18 +206,16 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
 
 ## CI: .github/workflows/android-build.yml
 - Decodes signing material → installs NDK **27.0.12077973** and SDK platform/build-tools **36** (no
-  CMake) → `gradle assembleRelease bcoreJar` piped through `tee` to `build.log`.
+  CMake) → `gradle assembleRelease` piped through `tee` to `build.log`.
 - Ships the **release** APK (`dist/bskiller-<versionName>-<run_number>.apk`), signed with our key. On
   fork PRs (no secrets) the release APK is unsigned; the cert assertions are then skipped with a
   warning instead of failing the build.
 - Verifies the APK with `apksigner verify` and **fails if it carries the default `CN=Android Debug`
   certificate** instead of ours.
 - **Fails if either native lib is missing** — `lib/armeabi-v7a/libzyn-bs.so` or `libblackbox.so`.
-- Verifies `bcore-all.jar` actually contains the engine (`>= 100` `top/niunaijun/blackbox/` entries),
-  so a silently-empty jar cannot ship.
 - Telegram report: **failure** → sends `build.log`; **success** → sends the signed APK
-  (`dist/bskiller-<versionName>-<run_number>.apk`) **and** `dist/bcore-all-<run_number>.jar`.
-- Logs, APKs and the jar are also kept as a build artifact (`loader-<run_number>`, 14 days).
+  (`dist/bskiller-<versionName>-<run_number>.apk`).
+- Logs and APKs are also kept as a build artifact (`loader-<run_number>`, 14 days).
 - Telegram steps are `continue-on-error` and skip with a warning when secrets are absent (fork PRs).
 
 ## Actions secrets (names only — never store values here)
