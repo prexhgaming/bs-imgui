@@ -29,16 +29,36 @@
 - `app/src/main/assets/a7f3c9.bin` — AES-256-GCM encrypted wallpaper (see "Encrypted assets").
 
 ### Which engine this is
-BlackBox **Reborn** (github.com/fdavids77/BlackBoxReborn), vendored from source and Apache-2.0.
-Its README still advertises GPL-3.0, but its `LICENSE` file is Apache-2.0 — the licence file
-governs, and it matches this repo. It replaced the previous core entirely (different lineage,
-different packages, different native build); the swap is not half-reversible, so the pre-swap state
-is tagged `pre-engine-swap` on `main` if a full revert is ever needed.
+**NewBlackbox-AutoImport** (github.com/RaeesRizwan09/NewBlackbox-AutoImport), vendored from source and
+Apache-2.0. It replaced the earlier BlackBox Reborn vendor (github.com/fdavids77/BlackBoxReborn):
+same `top.niunaijun.blackbox` API and same three-module layout, but 23 changed engine files —
+notably native (`BoxCore.cpp`, `JniHook`, `hidden_api.cpp`), `ActivityStack`, `DaemonService`,
+`BPackageManagerService`, the `IActivityManager`/`IPackageManager`/`IAppOpsManager` proxies, and it
+**dropped** `utils/compat/PackageParserFix`. `black-reflection/` and `compiler/` are byte-identical
+between the two, so only `Bcore/` ever needs swapping. The swap is not half-reversible; the
+pre-first-swap state is tagged `pre-engine-swap` on `main`.
 
 Why source and not an AAR: the original core was a prebuilt `mundo-release.aar` that shipped
 **64-bit only** and was gated on a remote licence server (`MetaActivationManager` → HTTP → native
 "prepared" flag), making it unusable offline. Building from source keeps it licence-free and
 inspectable.
+
+### Launch path: call the core API, load the payload in the guest
+The loader must not hand-roll any of this — the reference host app does it with plain API calls:
+- **No worker thread for install/launch.** `LaunchController` used to spawn a bare
+  `new Thread(...)`, which has no `Looper`; the engine's calls expect one, so the launch silently
+  went nowhere and the UI sat on the loading screen. There are also no artificial `postDelayed`
+  delays any more. The whole sequence is `isInstalled()` → (`installPackageAsUser()` if the game is
+  on the device but not cloned) → `launchApk()`, called directly.
+- **Never override `isEnableLauncherActivity()`.** It does not mean "show a launcher UI": it picks
+  the launch path in `BlackBoxCore.startActivity()` — `true` → `LauncherActivity.launch(...)`,
+  `false` → `BActivityManager.startActivity(...)`. Forcing it false makes `launchApk()` return true
+  while the game never comes up.
+- **The payload is loaded in the GUEST process, not the loader.** `libzyn-bs.so` creates the game's
+  lifecycle, so it is loaded from `BoxApplication.GuestPayloadLoader`
+  (`AppLifecycleCallback.beforeApplicationOnCreate`, filtered to `GameConfig.PACKAGE_NAME`) via a
+  plain `System.loadLibrary("zyn-bs")` — the guest process is our own APK, so its native lib dir is
+  already on the linker path. No absolute-path fallback, no dlopen, no host-side load.
 
 ### Telemetry was deliberately removed — do not reintroduce it
 This engine shipped a log uploader: `utils/LogSender.java` POSTed logcat as multipart to a
@@ -54,9 +74,11 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
   "Minify, shrink and keep rules" for why release and not debug).
 - `gradle assembleRelease bcoreJar` additionally emits `dist/bcore-all.jar` (see "Reusing the core jar").
 - Toolchain (keep `app`, `Bcore` and CI in sync): **AGP 8.13.2**, Gradle **8.14.5** (CI's
-  `GRADLE_VERSION`), `compileSdk 36`, `buildToolsVersion 36.1.0`, **Java 17**, `minSdk 24`,
-  `targetSdk 28`. `compileSdk` must stay 36: the engine's AAR metadata pins `minCompileSdk 36`, so a
-  lower value is a hard failure, not a warning.
+  `GRADLE_VERSION`), `compileSdk 36`, `buildToolsVersion 36.1.0`, **Java 21** (JDK 21 in CI —
+  `Bcore` compiles at 21), `minSdk 24`, `targetSdk 28`. `compileSdk` must stay 36: the engine's AAR
+  metadata pins `minCompileSdk 36`, so a lower value is a hard failure, not a warning.
+- **Two NDKs**, both installed by CI: `NDK_VERSION 27.0.12077973` for the payload (`app`), and
+  `ENGINE_NDK_VERSION 29.0.13846066` because `Bcore/build.gradle` pins `ndkVersion = 29…` itself.
 - No `gradlew` in the repo — the wrapper jar isn't committed. CI gets `gradle` from
   `gradle/actions/setup-gradle@v3`; run `gradle wrapper` locally if you want one.
 - `ndkVersion` must match CI's `NDK_VERSION` (`27.0.12077973`). `Bcore/build.gradle` and the app pin it.
