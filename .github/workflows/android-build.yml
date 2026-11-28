@@ -21,6 +21,9 @@ on:
     paths:
       - 'app/**'
       - 'app/libs/**'
+      # The core is a source module now: a change under bcore/ (its sources,
+      # its build file or the prebuilt annotation-processor jar) must rebuild.
+      - 'bcore/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -29,6 +32,7 @@ on:
     paths:
       - 'app/**'
       - 'app/libs/**'
+      - 'bcore/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
