@@ -47,6 +47,10 @@ public class BoxApplication extends Application {
         super.attachBaseContext(base);
         sHostPackage = base.getPackageName();
 
+        // 0. Persistent logging first, so a failure in the boot sequence below
+        //    still leaves a trace on disk instead of only in logcat.
+        CrashLog.init(base);
+
         // 1. Engine init. Must run before any other FCore call, in every
         //    process of this APK (the guest processes instantiate this same
         //    Application class).
@@ -70,7 +74,7 @@ public class BoxApplication extends Application {
     public void onCreate() {
         super.onCreate();
         try {
-            Log.i(TAG, "loader started: host=" + sHostPackage
+            CrashLog.i(TAG, "loader started: host=" + sHostPackage
                     + " engine=" + FCore.get().getVersion()
                     + " process=" + FCore.get().getProcessType());
         } catch (Throwable t) {

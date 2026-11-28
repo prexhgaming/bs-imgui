@@ -204,7 +204,12 @@ public class LaunchController {
             return true;
         } catch (Throwable t) {
             Log.e(TAG, "installPackageAsUser threw", t);
-            fail(context.getString(R.string.error_install_failed) + "\n" + t.getMessage());
+            // getMessage() is frequently null, which is how this used to show
+            // up as "Could not install the game into the sandbox. null" and
+            // tell us nothing. The class name is always useful.
+            CrashLog.e(TAG, "installPackageAsUser threw for " + packageName, t);
+            fail(context.getString(R.string.error_install_failed)
+                    + "\n" + CrashLog.describe(t));
             return false;
         }
     }
@@ -249,7 +254,7 @@ public class LaunchController {
             }
             FCore.get().launchApk(packageName, USER_ID);
         } catch (Throwable t) {
-            Log.e(TAG, "launchApk threw", t);
+            CrashLog.e(TAG, "launchApk threw for " + packageName, t);
             return false;
         }
         busy = false;
@@ -259,7 +264,9 @@ public class LaunchController {
 
     private void fail(String message) {
         busy = false;
-        Log.e(TAG, "launch sequence failed: " + message);
+        // The UI message is what the user sees, so it belongs in the file too:
+        // a screenshot of the toast and this line are then the same thing.
+        CrashLog.e(TAG, "launch sequence failed: " + message, null);
         emit(State.ERROR, message);
     }
 
