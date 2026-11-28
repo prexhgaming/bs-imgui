@@ -33,10 +33,23 @@ android {
 
         consumerProguardFiles "consumer-rules.pro"
 
-        // No abiFilters here on purpose: this library builds EVERY ABI listed in
-        // src/main/cpp/Application.mk (armeabi-v7a + arm64-v8a). Narrowing is
-        // the consuming app's decision — app/build.gradle filters to
-        // armeabi-v7a because the target game's payload is 32-bit.
+        ndk {
+            // Every ABI this core supports — both of them. This is NOT the
+            // app's narrowing; app/build.gradle picks armeabi-v7a out of here.
+            //
+            // It has to be declared because AGP drives ndk-build with an
+            // explicit `APP_ABI=<abi>` on the command line for each ABI it
+            // thinks the module supports, and that overrides APP_ABI in
+            // Application.mk. With no abiFilters, AGP asks for the NDK's whole
+            // default set (x86, x86_64, ...) and the build dies at configure
+            // time on Dobby/x86/libdobby.a, which does not exist.
+            //
+            // The list is exactly APP_ABI in src/main/cpp/Application.mk, and
+            // Dobby only ships prebuilts for these two:
+            //   Dobby/armeabi-v7a/libdobby.a
+            //   Dobby/arm64-v8a/libdobby.a
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+        }
     }
 
     buildTypes {
