@@ -68,15 +68,14 @@ android {
         unitTests.returnDefaultValues = true
     }
 
-    // `lint` is the current name for the old `lintOptions` block.
+    // Only the two settings :app also uses. The engine's original
+    // `lintOptions` block set textOutput/textReport/check with method-call
+    // syntax; in AGP 8 those are Property<String>/Property<Boolean>, so that
+    // syntax fails at configuration time ("Value is null"). Lint is not run by
+    // assembleRelease, so nothing is lost by dropping them.
     lint {
         checkReleaseBuilds false
         abortOnError false
-        warningsAsErrors false
-        disable "UnusedResources", 'RestrictedApi'
-        textOutput "stdout"
-        textReport false
-        check 'NewApi', 'InlinedApi'
     }
 }
 
