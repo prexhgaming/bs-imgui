@@ -1,18 +1,17 @@
 name: Android Build
 
 # Builds and signs the loader APK with Gradle. Gradle drives the payload's
-# native build itself (ndk-build over app/src/main/jni). The SpaceCore engine
-# (:Spacecore) needs no native build at all: libfcore.so, libshadowhook.so,
-# libpine.so and the xcrash libs ship prebuilt inside the vendored AAR.
+# native build itself (ndk-build over app/src/main/jni). The elite engine
+# (app/libs/elite.aar) needs no native build at all: its prebuilt .so files
+# ship inside the AAR.
 #
 # Only `assembleRelease` is built. AGP force-disables R8 obfuscation AND
 # optimisation for any `debuggable` build type, so a release build is the only
 # one whose classes are actually renamed; the release build type is also signed
 # with OUR certificate, so the APK installs as an update over an existing one.
 #
-# `:Spacecore` is a plain Gradle library module that resolves the vendored
-# com.fvbox:flib:1.0.0 AAR from Spacecore/repo, so every build packages exactly
-# the AAR committed in the repository.
+# The engine is consumed straight from the AAR committed in app/libs/, so every
+# build packages exactly the engine that is in the repository.
 #
 # Reporting:
 #   - failure -> the full build log (build.log) to Telegram
@@ -22,7 +21,7 @@ on:
     branches: [main]
     paths:
       - 'app/**'
-      - 'Spacecore/**'
+      - 'app/libs/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -30,7 +29,7 @@ on:
   pull_request:
     paths:
       - 'app/**'
-      - 'Spacecore/**'
+      - 'app/libs/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -136,9 +135,9 @@ jobs:
             echo "== gradle $(gradle --version 2>/dev/null | grep -m1 '^Gradle' || echo '?') =="
             echo "== ndk: ${NDK_VERSION} =="
             grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' app/src/main/jni/Application.mk || true
-            # Fingerprint the vendored engine AAR so a stale or locally edited
-            # engine is visible in the log.
-            echo "== engine: $(sha256sum Spacecore/repo/com/fvbox/flib/1.0.0/flib-1.0.0.aar | cut -d' ' -f1 | cut -c1-16) (com.fvbox:flib:1.0.0) =="
+            # Fingerprint the engine AAR so a stale or locally edited engine is
+            # visible in the log.
+            echo "== engine: $(sha256sum app/libs/elite.aar | cut -d' ' -f1 | cut -c1-16) (app/libs/elite.aar) =="
             echo "== started: $(date -u +%FT%TZ) =="
             echo
           } | tee "$LOG_FILE"
@@ -172,14 +171,15 @@ jobs:
             echo "apk_bytes=$(wc -c < "$apk")"
           } >> "$GITHUB_OUTPUT"
 
-          # Both native libs must be inside the APK: the payload and the engine
-          # (libfcore.so is the SpaceCore AAR's engine library).
-          for lib in lib/armeabi-v7a/libzyn-bs.so lib/armeabi-v7a/libfcore.so; do
-            if ! unzip -l "$apk" | grep -q "$lib"; then
-              echo "::error::$lib is missing from $apk"
-              exit 1
-            fi
-          done
+          # The payload native lib must be inside the APK. The engine's own .so
+          # files come from app/libs/elite.aar and are reported below instead of
+          # being asserted by name, so an engine update cannot fail the build.
+          if ! unzip -l "$apk" | grep -q "lib/armeabi-v7a/libzyn-bs.so"; then
+            echo "::error::lib/armeabi-v7a/libzyn-bs.so is missing from $apk"
+            exit 1
+          fi
+          echo "-- native libs in APK:"
+          unzip -l "$apk" | grep -oE 'lib/[^/]+/[^ ]+\.so' | sort -u
 
           # Ship it under a stable, versioned name rather than app-debug.apk.
           # sed (not grep -P) so this also works with BusyBox grep.

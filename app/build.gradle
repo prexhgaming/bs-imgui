@@ -20,9 +20,8 @@ if (hasSigning) {
 
 android {
     namespace 'com.zyn.bs'
-    // 36 to match :Spacecore and the 36.1.0 build tools. The engine AAR itself
-    // declares no minCompileSdk, so this is a toolchain choice, not an AAR
-    // requirement.
+    // 36 to match the 36.1.0 build tools. The engine AAR declares no
+    // minCompileSdk, so this is a toolchain choice, not an AAR requirement.
     compileSdk 36
     buildToolsVersion '36.1.0'
     ndkVersion rootProject.ext.ndkVersion
@@ -34,10 +33,10 @@ android {
         versionCode 1
         versionName '4.0.1'
 
-        // The SpaceCore AAR's own manifest sets android:debuggable="true".
-        // Pinning the attribute here (per build type, via the ${debuggable}
-        // placeholder) keeps release builds non-debuggable instead of inheriting
-        // the library value.
+        // A library manifest may hardcode android:debuggable="true". Pinning
+        // the attribute here (per build type, via the ${debuggable}
+        // placeholder) keeps release builds non-debuggable instead of
+        // inheriting it.
         manifestPlaceholders = [debuggable: 'false']
 
         // Must match jni/Application.mk (APP_ABI := armeabi-v7a).
@@ -45,14 +44,15 @@ android {
             abiFilters 'armeabi-v7a'
         }
 
-        // The target game lives in GameConfig.java, not here.
+        // The single target game lives in LauncherActivity.TARGET_PACKAGE,
+        // not here.
     }
 
-    // The SpaceCore AAR's manifest sets android:extractNativeLibs="true", and
-    // AGP does NOT merge that attribute from libraries — it is driven by this
-    // DSL instead. Matching it keeps the engine's .so files extracted to
+    // The engine AAR expects android:extractNativeLibs="true", and AGP does NOT
+    // merge that attribute from libraries — it is driven by this DSL instead.
+    // Keeping it true extracts the engine's .so files to
     // /data/app/<pkg>/lib/arm/ exactly as in upstream's own (working) build, so
-    // any dlopen-by-absolute-path inside libfcore.so keeps working.
+    // any dlopen-by-absolute-path inside the engine keeps working.
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -88,10 +88,9 @@ android {
             debuggable true
             manifestPlaceholders = [debuggable: 'true']
             // R8 is ON for debug as well, because debug is the build type CI
-            // ships and signs. The engine keeps ITSELF through the consumer
-            // ProGuard rules inside the SpaceCore AAR (AGP merges them in); our
-            // own code is deliberately shrunk and renamed (see
-            // proguard-rules.pro).
+            // ships and signs. The engine is kept by the -keep rules in
+            // proguard-rules.pro; our own code is deliberately shrunk and
+            // renamed.
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -128,8 +127,8 @@ android {
     }
 
     compileOptions {
-        // 21 to match :Spacecore (JDK 21 in CI). The engine AAR itself is
-        // compiled for Java 8, which is fine — Java 21 can consume it.
+        // 21 (JDK 21 in CI). The engine AAR itself is compiled for Java 8,
+        // which is fine — Java 21 can consume it.
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
@@ -150,31 +149,15 @@ android {
 }
 
 dependencies {
-    // The sandbox engine, consumed as a normal Gradle library module
-    // (:Spacecore). That module resolves the vendored
-    // com.fvbox:flib:1.0.0 AAR from Spacecore/repo and re-exports it, so
-    // com.fvbox.lib.FCore and friends are on this module's compile classpath.
-    implementation project(':Spacecore')
-
-    // NOT optional: the engine's rule store (com.fvbox.lib's obfuscated `u1`)
-    // does `new Gson()` in a static initialiser to (de)serialise PackageRule
-    // JSON, but the AAR shades every other dependency and leaves Gson
-    // unresolved. Upstream's demo only got it transitively via
-    // retrofit-converter-gson. Without it, addRule()/init() die with
-    // NoClassDefFoundError. R8 confirms the gap:
-    // "Missing class com.google.gson.Gson (referenced from ...)".
-    implementation 'com.google.code.gson:gson:2.10.1'
-
-    // The engine's own runtime dependencies (the AAR bundles its native libs
-    // and the hooking/reflection libraries, but not these). Versions mirror the
-    // upstream SpaceCore demo app so the engine runs against what it was
-    // written for. They are also declared in :Spacecore — repeated here so the
-    // engine's runtime is explicit at the app level.
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.6.10'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2'
-    implementation 'com.tencent:mmkv-static:1.2.10'
-
-    implementation 'com.google.android.material:material:1.9.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
+    // The sandbox engine, consumed as a plain local AAR from app/libs/.
+    implementation fileTree(dir: "libs", includes: ["*aar"])
+    implementation 'androidx.appcompat:appcompat:1.2.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'net.lingala.zip4j:zip4j:2.9.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okio:okio:3.9.0'
+    implementation 'com.github.tiann:FreeReflection:3.2.2'
+    implementation 'com.github.CodingGay.BlackReflection:core:1.1.4'
+    annotationProcessor 'com.github.CodingGay.BlackReflection:compiler:1.1.4'
 }

@@ -30,14 +30,13 @@
         </activity>
 
         <!--
-            The engine's components (the sandbox services/providers, the
-            :sc0..:scN process pool, the ~2500 proxy activities, the file
-            provider, ...) are merged in from the :Spacecore module, i.e. from
-            the vendored com.fvbox:flib AAR. Do not declare them here.
+            The engine's components (the sandbox services/providers, the guest
+            process pool, the proxy activities, the file provider, ...) are
+            merged in from app/libs/elite.aar. Do not declare them here.
         -->
         <!--
-            android:debuggable is pinned above through ${debuggable} because the
-            engine AAR's own manifest hardcodes android:debuggable="true"; the
+            android:debuggable is pinned above through ${debuggable} because a
+            library manifest may hardcode android:debuggable="true"; the
             placeholder keeps release builds non-debuggable.
         -->
     </application>

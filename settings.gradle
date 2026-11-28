@@ -11,24 +11,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Kept for JitPack-published libraries. The SpaceCore engine does NOT
-        // need it (the previous engine took FreeReflection/toml4j/
-        // BlackReflection from here), but removing it would break any future
-        // com.github.* dependency.
+        // Kept for JitPack-published libraries (FreeReflection, BlackReflection).
         maven { url 'https://jitpack.io' }
-        // The SpaceCore engine AAR, vendored in-tree as a local Maven
-        // repository: Spacecore/repo/com/fvbox/flib/1.0.0/{flib-1.0.0.aar,.pom}.
-        // Resolving it through Maven (rather than a raw files() dependency) is
-        // what makes AGP merge the AAR's manifest, resources, jni libs and
-        // consumer ProGuard rules.
-        maven { url = new File(rootDir, 'Spacecore/repo').toURI() }
     }
 }
 
 include ':app'
-
-// The sandbox engine (SpaceCore) — a library module wrapping the upstream
-// prebuilt AAR. It replaced :Bcore (BlackBox, built from source).
-include ':Spacecore'
 
 rootProject.name = 'BSKillerLoader'

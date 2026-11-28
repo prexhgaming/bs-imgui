@@ -4,10 +4,10 @@
 # shrunk and renamed. Components declared in AndroidManifest.xml (Application,
 # Activity, services) are kept automatically by AGP, so they need no rule here.
 #
-# The SpaceCore engine keeps ITSELF through the consumer ProGuard rules inside
-# the AAR, which AGP merges into this build automatically because the app depends
-# on :Spacecore. The explicit keeps further down are belt-and-braces for the
-# classes the engine reaches by name.
+# The elite engine keeps ITSELF through the consumer ProGuard rules inside
+# app/libs/elite.aar, which AGP merges into this build automatically. The
+# explicit keeps further down are belt-and-braces for the classes the engine
+# reaches by name (its proxy pools and the SDK activation entry point).
 
 # ---------------------------------------------------------------------------
 # JNI — native methods are resolved by their Java name, which must not change.
@@ -17,17 +17,16 @@
 }
 
 # ---------------------------------------------------------------------------
-# SpaceCore engine (com.fvbox:flib)
+# elite engine (app/libs/elite.aar)
 # ---------------------------------------------------------------------------
-# The AAR's consumer rules already keep FCore, the proxy pools, the
-# blackreflection mirrors and MMKV. They also enable -repackageclasses, which
-# renames everything that is not explicitly kept — so the engine's name-based
-# lookups are pinned here as well. A future AAR swap then cannot silently lose
-# them.
--keep class com.fvbox.lib.** { *; }
--keep class com.fvbox.mirror.** { *; }
--keep class top.niunaijun.blackreflection.** { *; }
--keep class org.lsposed.** { *; }
+# The AAR ships no consumer rules, so the classes it looks up by name — the
+# installer entry point, the proxy activity/provider/service pools and the SDK
+# activation manager — are pinned here.
+-keep class com.elite.** { *; }
+-keep class net_62v.** { *; }
+-keep class android.Meta.** { *; }
+-keep class android.MetaCore.** { *; }
+-keep class org.lsposed.lsparanoid.** { *; }
 
 # ---------------------------------------------------------------------------
 # Harden against reversing
