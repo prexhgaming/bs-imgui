@@ -196,6 +196,11 @@ The loader must not hand-roll any of this:
   with `NoClassDefFoundError` the first time rules are touched. `app/build.gradle` pins
   `com.google.code.gson:gson`. Upstream's demo only got it via `retrofit-converter-gson`, which is why
   it is easy to miss.
+- **A bare `null` in an error toast means `Throwable.getMessage()` was null**, i.e. the engine *threw*
+  (often a `NullPointerException` with no message) rather than rejecting the install. Use
+  `CrashLog.describe(t)` — it always includes the exception class — and read
+  `files/logs/loader.log` instead of guessing. `android.util.Log` alone is logcat-only and is gone
+  once the cable is unplugged, which is why nothing was available when this first came up.
 - **`android:extractNativeLibs` from the AAR is NOT merged by AGP.** The engine's manifest asks for
   extraction, but AGP drops that attribute from libraries and drives it from the DSL instead, logging
   `extractNativeLibs is set to true in a dependency's AndroidManifest.xml`. `app/build.gradle` sets
@@ -205,6 +210,17 @@ The loader must not hand-roll any of this:
 - **Dobby is now linked exactly once** (payload only). The old engine statically linked its own
   `libdobby.a`; SpaceCore uses shadowhook/pine instead, so the former "two Dobbies fight over hook
   slots" hazard is gone. Do not reintroduce a second static Dobby.
+
+## Logs
+- **`files/logs/loader.log`** (internal storage: `/data/data/com.zyn.bs/files/logs/loader.log`), written
+  by `CrashLog`; rotated to `loader.log.1` at 512 KB. It mirrors the engine-facing logcat lines and
+  records uncaught exceptions via a default handler.
+- Pull it from a debug build (what CI ships) without root:
+  `adb exec-out run-as com.zyn.bs cat files/logs/loader.log > loader.log`.
+- Live logcat, filtered to the tags this app uses:
+  `adb logcat -v time LaunchController:V BoxApplication:V NativeBridge:V CrashLog:V AndroidRuntime:E *:S`.
+- Tags: `BoxApplication` (boot, engine version/process type), `LaunchController` (install/launch
+  sequence), `NativeBridge` (payload), `CrashLog` (logger itself).
 
 ## Engine packaging (do not reintroduce a flat jar)
 - The engine is **only** ever consumed as `implementation project(':Spacecore')`, which resolves the
