@@ -57,6 +57,12 @@ What differs in this one:
   `FLAG_SYSTEM` only registers the existing system APK — `CopyExecutor` copies nothing), so a stale
   sandbox entry can never survive a re-launch. The real install error message is surfaced in the UI
   instead of a generic string.
+- **GMS is installed into the user before the game.** `LaunchController` calls `BlackBoxCore.get()
+  .installGms(USER_ID)` (guarded by `isInstallGms(USER_ID)`) right after the payload is loaded. The
+  engine's GMS hooks (`GmsProxy`, `GoogleAccountManagerProxy`, `AuthenticationProxy`) are registered
+  unconditionally in `HookManager` for guest processes — there is no `enableGms` flag in this engine's
+  `ClientConfiguration`, so installing GMS is the only switch. A GMS failure is logged and does not
+  block the game launch.
 - **The loader screen must not overflow.** `LauncherView` is a vertical stack with the centre block on
   `layout_weight = 1` (scrollable) and the title on a single ellipsized line. Keep it that way; do
   not re-introduce the old fixed `190dp` top margin + bottom-anchored action block, which overlapped
@@ -96,8 +102,9 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
   (`app/src/main/jni/Android.mk`) and **CMake** for the engine
   (`Bcore/src/main/cpp/CMakeLists.txt`). CMake is required again — CI installs `cmake;3.22.1`
   (CMake 3.31+ rejects the engine's `cmake_minimum_required(3.4.1)`).
-- **One command builds everything:** `gradle assembleRelease` (CI builds release only — see
-  "Minify, shrink and keep rules" for why release and not debug).
+- **One command builds everything:** `gradle assembleDebug` (CI builds debug — see "Minify, shrink and
+  keep rules" for the R8 story) or `gradle assembleRelease`. Both build types are signed with the
+  same release key, so either can update an existing install.
 - **No flat jar.** `:Bcore` is consumed as a normal Gradle library module; there is no `bcoreJar`
   task and nothing is prebuilt into `libs/`. See "No flat jar" below for why.
 - Toolchain (keep `app`, `Bcore` and CI in sync): **AGP 8.13.2**, Gradle **8.14.5** (CI's
@@ -232,13 +239,11 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
 
 ## CI: .github/workflows/android-build.yml
 - Decodes signing material → installs both NDKs (**27.0.12077973** payload, **24.0.8215888** engine),
-  **CMake 3.22.1** and SDK platform/build-tools **36** → `gradle assembleRelease` piped through `tee`
+  **CMake 3.22.1** and SDK platform/build-tools **36** → `gradle assembleDebug` piped through `tee`
   to `build.log`.
-- Ships the **release** APK (`dist/bskiller-<versionName>-<run_number>.apk`), signed with our key. On
-  fork PRs (no secrets) the release APK is unsigned; the cert assertions are then skipped with a
-  warning instead of failing the build.
-- Verifies the APK with `apksigner verify` and **fails if it carries the default `CN=Android Debug`
-  certificate** instead of ours.
+- Ships the **debug** APK (`dist/bskiller-<versionName>-<run_number>.apk`), signed with our key.
+- **Does not check the APK signature** (on purpose): both build types use the release keystore, so the
+  check added nothing but noise. Did before, via `apksigner verify` — don't re-add it.
 - **Fails if either native lib is missing** — `lib/armeabi-v7a/libzyn-bs.so` or `libblackbox.so`.
 - Telegram report: **failure** → sends `build.log`; **success** → sends the signed APK
   (`dist/bskiller-<versionName>-<run_number>.apk`).
