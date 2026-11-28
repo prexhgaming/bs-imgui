@@ -84,5 +84,9 @@
 - CI: `.github/workflows/android-build.yml` builds with Gradle + ndk-build (`assembleDebug`),
   fingerprints `bcore/src`, and asserts **both** `lib/armeabi-v7a/libzyn-bs.so` and
   `lib/armeabi-v7a/libblackbox.so` are in the APK.
+- CI only runs on paths listed in that workflow's `on.push.paths`. It is not a catch-all: a
+  commit touching nothing on that list is silently skipped (no failed run, just no run). When
+  adding a top-level module or directory, add it there too — `bcore/**` was missing once and
+  an AGP fix sat unbuilt.
 - No Android SDK in the sandbox: only syntax-check Java (`javac` with missing deps filtered),
   never expect a full local build. `CrashHandler` is unit-tested against stubs in `tmp/`.
