@@ -37,8 +37,19 @@ public class BoxApplication extends Application {
     /** Sandbox SDK key — activated automatically in {@link #onCreate()}. */
     private static final String SDK_KEY = "Z4T2ZYUIYDWOG1JD7635";
 
-    /** Payload library, packaged in this APK as {@code lib<name>.so}. */
-    private static final String PAYLOAD_LIB = "zyn-bs";
+    /**
+     * Payload library name — the single string to change when swapping payloads.
+     *
+     * <p>The guest copy is expected at
+     * {@code <filesDir>/loader/lib<TARGET_LIB>.so}, the same staging location the
+     * reference host uses; if it is absent the copy packaged in this APK as
+     * {@code lib<TARGET_LIB>.so} is loaded instead.</p>
+     */
+    private static final String TARGET_LIB = "zyn-bs";
+
+    /** Folder and file name derived from {@link #TARGET_LIB}. */
+    private static final String LOADER_DIR = "loader";
+    private static final String LIB_FILE = "lib" + TARGET_LIB + ".so";
 
     /** The one game this loader targets; only its guest process gets the payload. */
     private static final String TARGET_PACKAGE = "com.netease.newspike";
@@ -60,12 +71,13 @@ public class BoxApplication extends Application {
                     return base.getPackageName();
                 }
 
-                @Override
+                // The engine resolves these two reflectively, so like the
+                // reference host they carry no @Override: ClientConfiguration
+                // does not declare them, annotating them fails the build.
                 public boolean isHideRoot() {
                     return true;
                 }
 
-                @Override
                 public boolean isHideXposed() {
                     return true;
                 }
@@ -113,10 +125,15 @@ public class BoxApplication extends Application {
                 @Override
                 public void beforeApplicationOnCreate(String packageName, String processName,
                                                       Application application, int userId) {
-                    if (!TARGET_PACKAGE.equals(packageName)) {
+                    // Same hook the reference host uses: inside the guest process,
+                    // immediately before the game's own Application is created.
+                    // Restricted to the game's main process, again like the
+                    // reference (drop the processName test to cover sub-processes).
+                    if (!TARGET_PACKAGE.equals(packageName)
+                            || !TARGET_PACKAGE.equals(processName)) {
                         return;
                     }
-                    loadPayload(packageName, processName);
+                    loadPayload();
                 }
             });
         } catch (Throwable t) {
@@ -126,27 +143,32 @@ public class BoxApplication extends Application {
 
     /**
      * Loads the native payload in the guest process that is about to create the
-     * game's Application: a payload staged in {@code files/loader/} wins,
-     * otherwise the copy packaged in the APK is used. Never fatal, so a missing
-     * payload cannot kill the game process.
+     * game's Application.
+     *
+     * <p>Same staging location the reference host uses: {@code lib<TARGET_LIB>.so}
+     * inside the {@code loader} folder of the files directory. If that copy is
+     * absent, the one packaged in this APK is loaded instead, so the loader still
+     * works when nothing was staged. Never fatal, so a missing payload cannot
+     * kill the game process.</p>
      */
-    private void loadPayload(String packageName, String processName) {
+    private void loadPayload() {
         if (sPayloadLoaded) {
             return;
         }
+        File staged = new File(getFilesDir(), LOADER_DIR + File.separator + LIB_FILE);
         try {
-            File staged = new File(getFilesDir(), "loader/lib" + PAYLOAD_LIB + ".so");
             if (staged.exists()) {
                 System.load(staged.getAbsolutePath());
-                Log.i(TAG, "payload loaded from " + staged.getAbsolutePath());
+                Log.i(TAG, LIB_FILE + " loaded from " + staged.getAbsolutePath());
             } else {
-                System.loadLibrary(PAYLOAD_LIB);
-                Log.i(TAG, "payload loaded from the APK");
+                Log.w(TAG, LIB_FILE + " not staged at " + staged.getAbsolutePath()
+                        + "; loading the packaged copy");
+                System.loadLibrary(TARGET_LIB);
+                Log.i(TAG, LIB_FILE + " loaded from the APK");
             }
             sPayloadLoaded = true;
-            Log.i(TAG, "guest " + processName + " ready for " + packageName);
         } catch (Throwable t) {
-            Log.e(TAG, "payload not loaded for " + packageName + " in " + processName, t);
+            Log.e(TAG, LIB_FILE + " not loaded", t);
         }
     }
 }
