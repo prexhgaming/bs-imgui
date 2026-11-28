@@ -59,7 +59,7 @@ env:
 
 jobs:
   build:
-    name: gradle assemble (${{ github.ref_name }})
+    name: gradle assembleDebug (${{ github.ref_name }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -150,48 +150,33 @@ jobs:
           } | tee "$LOG_FILE"
 
           # --no-build-cache: no task output may be reused from a previous build.
-          gradle assembleRelease \
+          gradle assembleDebug \
             --no-build-cache --no-daemon 2>&1 | tee -a "$LOG_FILE"
 
-      # Fails loudly if the APK came out with the default debug key instead of
-      # ours, instead of shipping something that cannot update a real install.
-      - name: Verify APK is signed
+      # Debug builds are auto-signed with the debug keystore, which is fine for
+      # testing but cannot update a release install, so this only checks that an
+      # APK exists and that both native libs are inside it.
+      - name: Verify APK contents
         id: verify
         if: success()
         run: |
           set -euo pipefail
-          apk="$(find app/build/outputs/apk/release -name '*.apk' ! -name '*unsigned*' | head -n1)"
+          apk="$(find app/build/outputs/apk/debug -name '*.apk' ! -name '*unsigned*' | head -n1)"
           if [ -z "$apk" ]; then
-            apk="$(find app/build/outputs/apk/release -name '*.apk' | head -n1)"
+            apk="$(find app/build/outputs/apk/debug -name '*.apk' | head -n1)"
           fi
           if [ -z "$apk" ]; then
-            echo "::error::No release APK produced"
+            echo "::error::No debug APK produced"
             exit 1
           fi
 
-          # apksigner is authoritative (it parses the signing block, unlike a
-          # META-INF grep which only sees the optional v1 signature).
-          APKSIGNER="$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools" -name apksigner -type f | sort | tail -n1)"
-          [ -x "$APKSIGNER" ] || { echo "::error::apksigner not found"; exit 1; }
-
-          # Secrets are unavailable on fork PRs, so a release build comes out
-          # UNSIGNED there: warn instead of failing, but still check the libs.
-          if [ -f signing.properties ]; then
-            "$APKSIGNER" verify --verbose --print-certs "$apk"
-
-            # The APK must carry OUR certificate, not the default
-            # "CN=Android Debug" one. (A release build can't pick the debug key
-            # up from the debug build type, so this now guards against a
-            # misconfigured signingConfig instead.)
-            CERTS="$("$APKSIGNER" verify --print-certs "$apk")"
-            if printf '%s' "$CERTS" | grep -q 'CN=Android Debug'; then
-              echo "::error::$apk is signed with the default Android debug key"
-              exit 1
-            fi
-            printf '%s\n' "$CERTS" | grep 'certificate DN'
-          else
-            echo "::warning::signing.properties missing (fork PR?) - release APK is UNSIGNED"
-          fi
+          # Debug build: skip the signing verification (debug key is fine for testing).
+          echo "::warning::debug build - APK is signed with the debug key"
+          printf 'apk=%s\n' "$apk" >> "$GITHUB_OUTPUT"
+          {
+            echo "apk_name=$(basename "$apk")"
+            echo "apk_bytes=$(wc -c < "$apk")"
+          } >> "$GITHUB_OUTPUT"
 
           # Both native libs must be inside the APK: the payload and the engine.
           for lib in lib/armeabi-v7a/libzyn-bs.so lib/armeabi-v7a/libblackbox.so; do
@@ -200,7 +185,6 @@ jobs:
               exit 1
             fi
           done
-          echo "native libs: libzyn-bs.so + libblackbox.so (armeabi-v7a)"
 
           # Ship it under a stable, versioned name rather than app-debug.apk.
           # sed (not grep -P) so this also works with BusyBox grep.

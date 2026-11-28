@@ -5,6 +5,7 @@ import android.content.pm.PackageManager;
 import android.util.Log;
 
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.core.GmsCore;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
 
 /**
@@ -78,6 +79,11 @@ public class LaunchController {
     }
 
     private void resolveAndRun() {
+        // Install GMS into the sandbox first. The game depends on Play
+        // services; cloning them from the device is cheap (system-flag install,
+        // no file copy) and harmless if they are already there.
+        ensureGms();
+
         if (!isInstalledOnDevice()) {
             Log.e(TAG, packageName + " is not installed on the device");
             fail(context.getString(R.string.error_not_installed));
@@ -111,13 +117,38 @@ public class LaunchController {
         }
     }
 
-    private boolean isInstalledOnDevice() {
+    /**
+     * Clones Google Play services into the sandbox if the host has them. GMS
+     * is installed from the system package (no copy, no extra permission) and
+     * a failure is logged but not fatal — the game may still run without it.
+     */
+    private void ensureGms() {
         try {
-            context.getPackageManager()
-                    .getPackageInfo(packageName, PackageManager.GET_ACTIVITIES);
-            return true;
+            if (BlackBoxCore.get().isInstallGms(USER_ID)) {
+                return;
+            }
+            if (BlackBoxCore.getContext().getPackageManager()
+                    .getPackageInfo(GmsCore.GMS_PKG, 0) == null) {
+                return;
+            }
         } catch (PackageManager.NameNotFoundException e) {
-            return false;
+            Log.w(TAG, "GMS not present on the device, skipping");
+            return;
+        } catch (Throwable t) {
+            Log.w(TAG, "GMS check failed, skipping", t);
+            return;
+        }
+
+        Log.i(TAG, "installing GMS into the sandbox");
+        try {
+            InstallResult gmsResult = BlackBoxCore.get().installGms(USER_ID);
+            if (gmsResult != null && !gmsResult.success) {
+                Log.w(TAG, "GMS install failed: " + gmsResult.msg);
+            } else {
+                Log.i(TAG, "GMS installed");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "GMS install threw", t);
         }
     }
 
