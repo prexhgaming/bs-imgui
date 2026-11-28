@@ -153,9 +153,8 @@ jobs:
           gradle assembleDebug \
             --no-build-cache --no-daemon 2>&1 | tee -a "$LOG_FILE"
 
-      # Debug builds are auto-signed with the debug keystore, which is fine for
-      # testing but cannot update a release install, so this only checks that an
-      # APK exists and that both native libs are inside it.
+      # The APK must contain both native libs; it is then copied to dist/ under a
+      # stable, versioned name.
       - name: Verify APK contents
         id: verify
         if: success()
@@ -170,8 +169,9 @@ jobs:
             exit 1
           fi
 
-          # Debug build: skip the signing verification (debug key is fine for testing).
-          echo "::warning::debug build - APK is signed with the debug key"
+          # No signature check on purpose: both build types use the same release
+          # keystore (app/build.gradle points debug and release at
+          # signingConfigs.release), so verifying the cert adds nothing.
           printf 'apk=%s\n' "$apk" >> "$GITHUB_OUTPUT"
           {
             echo "apk_name=$(basename "$apk")"

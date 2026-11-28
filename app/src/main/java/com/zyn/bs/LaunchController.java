@@ -192,6 +192,18 @@ public class LaunchController {
         }
     }
 
+    /** True when the real device (outside the sandbox) has this package. */
+    private boolean isInstalledOnDevice() {
+        try {
+            return context.getPackageManager().getPackageInfo(packageName, 0) != null;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        } catch (Throwable t) {
+            Log.w(TAG, "device install check failed", t);
+            return false;
+        }
+    }
+
     /**
      * Hands the launch to the core.
      *
