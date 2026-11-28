@@ -18,7 +18,7 @@ import com.zyn.bs.ui.LauncherView;
  *
  * <p>Resolves the configured package ({@link GameConfig#PACKAGE_NAME}) into a
  * label + icon via {@link GameResolver}. If the game is present the button runs
- * the bcore launch sequence; if it is missing the button becomes an install
+ * the sandbox launch sequence; if it is missing the button becomes an install
  * action that opens the package's Play Store listing.</p>
  */
 public class LauncherActivity extends AppCompatActivity {

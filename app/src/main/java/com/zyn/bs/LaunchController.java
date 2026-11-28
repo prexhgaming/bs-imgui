@@ -1,38 +1,49 @@
 package com.zyn.bs;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.util.Log;
 
-import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.core.GmsCore;
-import top.niunaijun.blackbox.entity.pm.InstallResult;
+import com.fvbox.lib.FCore;
+import com.fvbox.lib.common.pm.InstallResult;
+import com.fvbox.lib.common.user.FUserInfo;
+import com.fvbox.lib.rule.common.PackageRule;
+
+import java.util.List;
 
 /**
- * Install-then-launch, driven purely by the core's public API.
+ * Install-then-launch, driven purely by the engine's public API
+ * ({@code com.fvbox.lib.FCore}).
  *
  * <p>The game is always cloned from the copy that is <em>already installed on the
  * device</em>, by package name:</p>
  *
- * <pre>BlackBoxCore.get().installPackageAsUser(packageName, userId)</pre>
+ * <pre>FCore.get().installPackageAsUser(packageName, userId)</pre>
  *
  * <p>That call resolves the system APK through the host {@code PackageManager}
- * and registers it with {@code InstallOption.installBySystem()}. The system flag
- * means the box references the existing system APK instead of copying it
- * ({@code CopyExecutor} does nothing for it), so the call is cheap, needs no
- * storage permission and no file picker — it only takes the package name.</p>
+ * and installs it with {@code InstallOption.installBySystem()} (FLAG_SYSTEM),
+ * so the box references the existing system APK instead of copying it. The call
+ * is therefore cheap, needs no storage permission and no file picker — it only
+ * takes the package name. It is deliberately run on <em>every</em> launch rather
+ * than only when {@code isInstalled()} is false: a sandbox entry left behind by
+ * an earlier install (or by the previous engine, whose data layout is
+ * incompatible) can be present but broken, and re-registering is cheap.</p>
  *
- * <p>It is deliberately run on <em>every</em> launch rather than only when
- * {@code isInstalled()} is false: a sandbox entry left behind by an earlier
- * install (or an earlier engine) can be present but broken, in which case the
- * old flow skipped the install and {@code launchApk} then silently did nothing.
- * Re-registering from the system package is cheap and always leaves a valid
- * entry.</p>
+ * <p>Two things differ from the old BlackBox flow:</p>
+ * <ul>
+ *   <li>{@code FCore.launchApk()} returns {@code void}, not a boolean. The
+ *       failure signal is {@code getLaunchIntentForPackage()} — the same call
+ *       {@code launchApk()} uses internally — returning {@code null}.</li>
+ *   <li>There is no {@code installGms()} / {@code isInstallGms()} in this
+ *       engine, so the GMS pre-install step is gone. SpaceCore ships its own
+ *       Google-services handling inside the AAR.</li>
+ * </ul>
  *
  * <p>There is no worker thread and no artificial delay — every call here is
  * metadata-only. The payload is not touched here at all: it is loaded inside the
  * guest process by
- * {@code BoxApplication.GuestPayloadLoader.beforeApplicationOnCreate}.</p>
+ * {@code BoxApplication.GuestPayloadLoader.beforeCreateApplication}.</p>
  */
 public class LaunchController {
 
@@ -40,6 +51,9 @@ public class LaunchController {
 
     /** Sandbox user slot the game is cloned into. */
     private static final int USER_ID = 0;
+
+    /** Package rules only have to be pushed once per process. */
+    private static volatile boolean sRuleApplied;
 
     public enum State {
         IDLE,
@@ -79,10 +93,8 @@ public class LaunchController {
     }
 
     private void resolveAndRun() {
-        // Install GMS into the sandbox first. The game depends on Play
-        // services; cloning them from the device is cheap (system-flag install,
-        // no file copy) and harmless if they are already there.
-        ensureGms();
+        ensureUser();
+        applyRules();
 
         if (!isInstalledOnDevice()) {
             Log.e(TAG, packageName + " is not installed on the device");
@@ -102,7 +114,7 @@ public class LaunchController {
         // once — this is the recovery path for a stale sandbox entry.
         Log.w(TAG, "launch failed, re-cloning " + packageName + " from the system package");
         try {
-            BlackBoxCore.get().uninstallPackageAsUser(packageName, USER_ID);
+            FCore.get().uninstallPackageAsUser(packageName, USER_ID);
         } catch (Throwable t) {
             Log.w(TAG, "uninstall before retry failed", t);
         }
@@ -118,37 +130,49 @@ public class LaunchController {
     }
 
     /**
-     * Clones Google Play services into the sandbox if the host has them. GMS
-     * is installed from the system package (no copy, no extra permission) and
-     * a failure is logged but not fatal — the game may still run without it.
+     * SpaceCore keeps an explicit user table; unlike the previous engine, slot 0
+     * is not assumed to exist. Create it if the table does not list it yet, so
+     * the install below has somewhere to go.
      */
-    private void ensureGms() {
+    private void ensureUser() {
         try {
-            if (BlackBoxCore.get().isInstallGms(USER_ID)) {
-                return;
+            List<FUserInfo> users = FCore.get().getUsers();
+            if (users != null) {
+                for (FUserInfo user : users) {
+                    if (user != null && user.id == USER_ID) {
+                        return;
+                    }
+                }
             }
-            if (BlackBoxCore.getContext().getPackageManager()
-                    .getPackageInfo(GmsCore.GMS_PKG, 0) == null) {
-                return;
-            }
-        } catch (PackageManager.NameNotFoundException e) {
-            Log.w(TAG, "GMS not present on the device, skipping");
-            return;
+            Log.i(TAG, "creating sandbox user " + USER_ID);
+            FCore.get().createUser(USER_ID);
         } catch (Throwable t) {
-            Log.w(TAG, "GMS check failed, skipping", t);
+            // Not fatal: the install below reports the real error if the user
+            // really is required.
+            Log.w(TAG, "user check failed, continuing with user " + USER_ID, t);
+        }
+    }
+
+    /**
+     * Per-package rules are this engine's replacement for the previous engine's
+     * {@code ClientConfiguration} switches. That one hid root globally
+     * ({@code isHideRoot()} → true); here the same intent is a package rule.
+     * Applied once per process, and never fatal.
+     */
+    private void applyRules() {
+        if (sRuleApplied) {
             return;
         }
-
-        Log.i(TAG, "installing GMS into the sandbox");
+        sRuleApplied = true;
         try {
-            InstallResult gmsResult = BlackBoxCore.get().installGms(USER_ID);
-            if (gmsResult != null && !gmsResult.success) {
-                Log.w(TAG, "GMS install failed: " + gmsResult.msg);
-            } else {
-                Log.i(TAG, "GMS installed");
-            }
+            PackageRule rule = new PackageRule.Builder(packageName)
+                    .addUserId(USER_ID)
+                    .isHideRoot(true)
+                    .build();
+            FCore.get().addRule(rule);
+            Log.i(TAG, "hide-root rule registered for " + packageName);
         } catch (Throwable t) {
-            Log.w(TAG, "GMS install threw", t);
+            Log.w(TAG, "addRule failed, continuing", t);
         }
     }
 
@@ -160,18 +184,19 @@ public class LaunchController {
     private boolean installFromSystem() {
         emit(State.INSTALLING, context.getString(R.string.status_installing));
         try {
-            InstallResult result = BlackBoxCore.get()
+            InstallResult result = FCore.get()
                     .installPackageAsUser(packageName, USER_ID);
-            if (result != null && !result.success) {
-                Log.e(TAG, "installPackageAsUser failed: " + result.msg);
+            if (result != null && !result.getSuccess()) {
+                Log.e(TAG, "installPackageAsUser failed: " + result.getMsg());
                 // An older copy may still be usable; prefer launching it over
                 // refusing outright, but only if it really is registered.
                 if (isInSandbox()) {
                     Log.w(TAG, "keeping the existing sandbox copy");
                     return true;
                 }
-                fail(result.msg != null && !result.msg.isEmpty()
-                        ? result.msg
+                String message = result.getMsg();
+                fail(message != null && !message.isEmpty()
+                        ? message
                         : context.getString(R.string.error_install_failed));
                 return false;
             }
@@ -186,7 +211,7 @@ public class LaunchController {
 
     private boolean isInSandbox() {
         try {
-            return BlackBoxCore.get().isInstalled(packageName, USER_ID);
+            return FCore.get().isInstalled(packageName, USER_ID);
         } catch (Throwable t) {
             return false;
         }
@@ -205,17 +230,24 @@ public class LaunchController {
     }
 
     /**
-     * Hands the launch to the core.
+     * Hands the launch to the engine.
      *
-     * @return true when the core reported that it started the game.
+     * <p>{@code FCore.launchApk()} is {@code void}, so the launch intent is the
+     * failure signal: {@code getLaunchIntentForPackage()} is what
+     * {@code launchApk()} resolves internally, and a {@code null} result means
+     * there is nothing to start.</p>
+     *
+     * @return true when the engine was handed a real launch intent.
      */
     private boolean launchGame() {
         emit(State.LAUNCHING, context.getString(R.string.status_launching));
         try {
-            if (!BlackBoxCore.get().launchApk(packageName, USER_ID)) {
-                Log.e(TAG, "launchApk returned false (no launch intent for " + packageName + ")");
+            Intent intent = FCore.get().getLaunchIntentForPackage(packageName, USER_ID);
+            if (intent == null) {
+                Log.e(TAG, "no launch intent for " + packageName);
                 return false;
             }
+            FCore.get().launchApk(packageName, USER_ID);
         } catch (Throwable t) {
             Log.e(TAG, "launchApk threw", t);
             return false;

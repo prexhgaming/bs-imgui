@@ -12,27 +12,27 @@ buildscript {
     }
 }
 
-// Read by every module's build.gradle — Bcore uses rootProject.ext.
+// Read by every module's build.gradle.
 ext {
     compileSdkVersion = 36
     buildToolsVersion = "36.1.0"
     targetSdkVersion = 28
     minSdk = 24
 
-    // :app's payload NDK (pinned again in app/build.gradle).
+    // The payload's NDK (pinned again in app/build.gradle). It is the only
+    // native build left: the SpaceCore engine (:Spacecore) ships its
+    // libfcore.so/libshadowhook.so/libpine.so prebuilt inside the AAR, so
+    // there is no engine NDK, no CMake project and no gradle-driven CMake
+    // install any more.
     ndkVersion = "27.0.12077973"
-    // The engine (:Bcore) is pinned to the NDK it was written against.
-    engineNdkVersion = "24.0.8215888"
-    // Both native builds are driven by Gradle: the engine uses CMake, the
-    // payload uses ndk-build.
-    cmakeVersion = "3.22.1"
 }
 
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
 
-// There is deliberately NO flat-jar ("bcoreJar") packaging task here.
-// The sandbox core is consumed as a normal Gradle library module
-// (app depends on `project(':Bcore')`), so Gradle always compiles the core from
-// the sources on disk and can never reuse a stale prebuilt jar.
+// There is deliberately NO flat-jar packaging task here.
+// The engine is consumed as a normal Gradle library module
+// (app depends on `project(':Spacecore')`, which resolves the vendored
+// com.fvbox:flib:1.0.0 AAR), so Gradle always resolves the exact AAR that is
+// committed in Spacecore/repo/ and can never reuse a stale prebuilt jar.

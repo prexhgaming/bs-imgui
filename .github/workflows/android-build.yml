@@ -1,17 +1,18 @@
 name: Android Build
 
-# Builds and signs the loader APK with Gradle. Gradle drives both native builds
-# itself: ndk-build for the payload (app/src/main/jni) and CMake for the :Bcore
-# engine (Bcore/src/main/cpp), so the native libs are compiled as part of the
-# normal app build.
+# Builds and signs the loader APK with Gradle. Gradle drives the payload's
+# native build itself (ndk-build over app/src/main/jni). The SpaceCore engine
+# (:Spacecore) needs no native build at all: libfcore.so, libshadowhook.so,
+# libpine.so and the xcrash libs ship prebuilt inside the vendored AAR.
 #
 # Only `assembleRelease` is built. AGP force-disables R8 obfuscation AND
 # optimisation for any `debuggable` build type, so a release build is the only
 # one whose classes are actually renamed; the release build type is also signed
 # with OUR certificate, so the APK installs as an update over an existing one.
 #
-# `:Bcore` is consumed as a plain Gradle library module (no flat jar, no
-# bcoreJar task), so every build compiles the engine from the sources on disk.
+# `:Spacecore` is a plain Gradle library module that resolves the vendored
+# com.fvbox:flib:1.0.0 AAR from Spacecore/repo, so every build packages exactly
+# the AAR committed in the repository.
 #
 # Reporting:
 #   - failure -> the full build log (build.log) to Telegram
@@ -21,7 +22,7 @@ on:
     branches: [main]
     paths:
       - 'app/**'
-      - 'Bcore/**'
+      - 'Spacecore/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -29,7 +30,7 @@ on:
   pull_request:
     paths:
       - 'app/**'
-      - 'Bcore/**'
+      - 'Spacecore/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -46,13 +47,9 @@ concurrency:
 env:
   # Payload NDK — must match rootProject.ext.ndkVersion.
   # r26+ is required: Application.mk sets APP_SUPPORT_FLEXIBLE_PAGE_SIZES.
+  # It is the only NDK the build needs: the engine ships prebuilt .so files
+  # inside its AAR, so there is no engine NDK and no CMake step any more.
   NDK_VERSION: 27.0.12077973
-  # The engine (:Bcore) is pinned to the NDK it was written against
-  # (rootProject.ext.engineNdkVersion). Both must be installed.
-  ENGINE_NDK_VERSION: 24.0.8215888
-  # The engine's native build is CMake; 3.22.1 still accepts its
-  # cmake_minimum_required(3.4.1). CMake 3.31+ would reject that.
-  CMAKE_VERSION: 3.22.1
   # Must match the AGP 8.13.2 / compileSdk 36 toolchain.
   GRADLE_VERSION: '8.14.5'
   LOG_FILE: build.log
@@ -106,9 +103,9 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
           # NEVER restore a cached Gradle User Home. A restored home can make
-          # Gradle treat :Bcore's tasks as UP-TO-DATE and reuse stale outputs,
-          # which silently ships an old engine while every source change looks
-          # applied. Correctness beats a ~40 s cache win here.
+          # Gradle treat the engine/module tasks as UP-TO-DATE and reuse stale
+          # outputs, which silently ships an old engine while every source change
+          # looks applied. Correctness beats a ~40 s cache win here.
           cache-disabled: true
 
       - name: Install Android NDK and SDK
@@ -119,17 +116,14 @@ jobs:
             SDKMANAGER="$(command -v sdkmanager)"
           fi
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          # The payload is ndk-build, the engine is CMake (needs an explicit
-          # cmake install), and both NDKs are pinned per module.
+          # Only the payload is a native build (ndk-build). The engine ships
+          # prebuilt .so files inside its AAR, so neither an engine NDK nor
+          # CMake is installed any more.
           "$SDKMANAGER" --install \
             "ndk;${NDK_VERSION}" \
-            "ndk;${ENGINE_NDK_VERSION}" \
-            "cmake;${CMAKE_VERSION}" \
             "platforms;android-36" \
             "build-tools;36.1.0"
           echo "payload NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${NDK_VERSION}"
-          echo "engine  NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${ENGINE_NDK_VERSION}"
-          echo "cmake       at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/cmake/${CMAKE_VERSION}"
 
       # `tee` keeps the full output on disk for the Telegram upload while it
       # still streams live to the Actions log. pipefail is what makes the step
@@ -142,9 +136,9 @@ jobs:
             echo "== gradle $(gradle --version 2>/dev/null | grep -m1 '^Gradle' || echo '?') =="
             echo "== ndk: ${NDK_VERSION} =="
             grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' app/src/main/jni/Application.mk || true
-            # Fingerprint the engine so a stale build is visible in the log: this
-            # hash changes whenever ANY file under Bcore/src changes.
-            echo "== engine: $(find Bcore/src -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1 | cut -c1-16) ($(find Bcore/src -type f | wc -l) files) =="
+            # Fingerprint the vendored engine AAR so a stale or locally edited
+            # engine is visible in the log.
+            echo "== engine: $(sha256sum Spacecore/repo/com/fvbox/flib/1.0.0/flib-1.0.0.aar | cut -d' ' -f1 | cut -c1-16) (com.fvbox:flib:1.0.0) =="
             echo "== started: $(date -u +%FT%TZ) =="
             echo
           } | tee "$LOG_FILE"
@@ -178,8 +172,9 @@ jobs:
             echo "apk_bytes=$(wc -c < "$apk")"
           } >> "$GITHUB_OUTPUT"
 
-          # Both native libs must be inside the APK: the payload and the engine.
-          for lib in lib/armeabi-v7a/libzyn-bs.so lib/armeabi-v7a/libblackbox.so; do
+          # Both native libs must be inside the APK: the payload and the engine
+          # (libfcore.so is the SpaceCore AAR's engine library).
+          for lib in lib/armeabi-v7a/libzyn-bs.so lib/armeabi-v7a/libfcore.so; do
             if ! unzip -l "$apk" | grep -q "$lib"; then
               echo "::error::$lib is missing from $apk"
               exit 1

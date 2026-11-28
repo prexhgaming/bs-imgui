@@ -13,7 +13,8 @@
         android:label="@string/app_name"
         android:theme="@style/LoaderTheme"
         android:requestLegacyExternalStorage="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:debuggable="${debuggable}">
 
         <activity
             android:name=".LauncherActivity"
@@ -28,9 +29,15 @@
         </activity>
 
         <!--
-            The core's components (SandBoxManagerService, the :p0..:p99 process
-            pool, the proxy activities/services, DaemonService, ...) are merged
-            in from the :Bcore library module. Do not declare them here.
+            The engine's components (the sandbox services/providers, the
+            :sc0..:scN process pool, the ~2500 proxy activities, the file
+            provider, ...) are merged in from the :Spacecore module, i.e. from
+            the vendored com.fvbox:flib AAR. Do not declare them here.
+        -->
+        <!--
+            android:debuggable is pinned above through ${debuggable} because the
+            engine AAR's own manifest hardcodes android:debuggable="true"; the
+            placeholder keeps release builds non-debuggable.
         -->
     </application>
 

@@ -20,8 +20,9 @@ if (hasSigning) {
 
 android {
     namespace 'com.zyn.bs'
-    // 36 to match :Bcore: its AAR metadata pins minCompileSdk 36, so a lower
-    // compileSdk here is a hard build failure, not a warning.
+    // 36 to match :Spacecore and the 36.1.0 build tools. The engine AAR itself
+    // declares no minCompileSdk, so this is a toolchain choice, not an AAR
+    // requirement.
     compileSdk 36
     buildToolsVersion '36.1.0'
     ndkVersion rootProject.ext.ndkVersion
@@ -32,6 +33,12 @@ android {
         targetSdk 28
         versionCode 1
         versionName '4.0.1'
+
+        // The SpaceCore AAR's own manifest sets android:debuggable="true".
+        // Pinning the attribute here (per build type, via the ${debuggable}
+        // placeholder) keeps release builds non-debuggable instead of inheriting
+        // the library value.
+        manifestPlaceholders = [debuggable: 'false']
 
         // Must match jni/Application.mk (APP_ABI := armeabi-v7a).
         ndk {
@@ -68,10 +75,12 @@ android {
     buildTypes {
         debug {
             debuggable true
+            manifestPlaceholders = [debuggable: 'true']
             // R8 is ON for debug as well, because debug is the build type CI
-            // ships and signs. The core keeps ITSELF through
-            // Bcore/consumer-rules.pro (AGP merges it in); our own code is
-            // deliberately shrunk and renamed (see proguard-rules.pro).
+            // ships and signs. The engine keeps ITSELF through the consumer
+            // ProGuard rules inside the SpaceCore AAR (AGP merges them in); our
+            // own code is deliberately shrunk and renamed (see
+            // proguard-rules.pro).
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -84,8 +93,10 @@ android {
         }
         release {
             debuggable false
-            // Shrink + rename our own code. The core is kept by proguard-rules.pro;
-            // manifest-declared components are kept automatically by AGP.
+            manifestPlaceholders = [debuggable: 'false']
+            // Shrink + rename our own code. The engine is kept by the AAR's
+            // consumer rules plus proguard-rules.pro; manifest-declared
+            // components are kept automatically by AGP.
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -106,7 +117,8 @@ android {
     }
 
     compileOptions {
-        // 21 to match :Bcore, which upstream compiles at 21 (JDK 21 in CI).
+        // 21 to match :Spacecore (JDK 21 in CI). The engine AAR itself is
+        // compiled for Java 8, which is fine — Java 21 can consume it.
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
@@ -127,11 +139,21 @@ android {
 }
 
 dependencies {
-    // The sandbox core, consumed as a normal Gradle library module (:Bcore).
-    // This replaces the prebuilt mundo-release.aar: the core is licence-free and
-    // compiles every ABI. Deliberately NOT a flat jar: a prebuilt
-    // bcore-all.jar in libs/ would shadow source changes and ship a stale engine.
-    implementation project(':Bcore')
+    // The sandbox engine, consumed as a normal Gradle library module
+    // (:Spacecore). That module resolves the vendored
+    // com.fvbox:flib:1.0.0 AAR from Spacecore/repo and re-exports it, so
+    // com.fvbox.lib.FCore and friends are on this module's compile classpath.
+    implementation project(':Spacecore')
+
+    // The engine's own runtime dependencies (the AAR bundles its native libs
+    // and the hooking/reflection libraries, but not these). Versions mirror the
+    // upstream SpaceCore demo app so the engine runs against what it was
+    // written for. They are also declared in :Spacecore — repeated here so the
+    // engine's runtime is explicit at the app level.
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.6.10'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2'
+    implementation 'com.tencent:mmkv-static:1.2.10'
 
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'

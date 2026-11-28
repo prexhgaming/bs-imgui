@@ -3,26 +3,43 @@ package com.zyn.bs;
 import android.app.Application;
 import android.content.Context;
 import android.util.Log;
-import java.io.File;
-import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
-import top.niunaijun.blackbox.app.configuration.ClientConfiguration;
+
+import com.fvbox.lib.FCore;
+import com.fvbox.lib.abs.ApplicationCallback;
 
 /**
- * Loader-side boot. The order and the set of enabled knobs mirror the engine's
- * own reference host app exactly, because anything the reference enables and we
- * leave out shows up as "the sandbox is not set up right" at launch time.
+ * Loader-side boot for the SpaceCore engine ({@code com.fvbox.lib.FCore}).
  *
- * <p>Boot sequence, same as the reference: {@code closeCodeInit()} →
- * {@code onBeforeMainApplicationAttach()} → {@code doAttachBaseContext()} →
- * {@code onAfterMainApplicationAttach()}, then {@code doCreate()} plus the
- * service-availability callback in {@code onCreate()}.</p>
+ * <p>The boot contract is far smaller than the previous engine's. BlackBox
+ * needed {@code closeCodeInit()} → {@code onBeforeMainApplicationAttach()} →
+ * {@code doAttachBaseContext()} → {@code onAfterMainApplicationAttach()} in
+ * {@code attachBaseContext} and {@code doCreate()} in {@code onCreate}. SpaceCore
+ * needs exactly one call before anything else touches the engine:</p>
+ *
+ * <pre>FCore.get().init(this, true);</pre>
+ *
+ * <p>The boolean is the engine's {@code isSamePkg} flag. The upstream reference
+ * host app (SpaceCore's own {@code BoxApplication.kt}) passes {@code true}, and
+ * that is the configuration for guests that run inside this APK's own
+ * {@code :sc0..:scN} processes — which is how this loader runs the game.</p>
+ *
+ * <p>Guest-side hooks go through {@link ApplicationCallback}, which is a single
+ * callback object (not a list of them, as in the old engine).
+ * {@link ApplicationCallback#beforeCreateApplication} fires inside the guest
+ * process right before the game's Application is created, which is exactly where
+ * the payload must be loaded.</p>
+ *
+ * <p>There is no ClientConfiguration in this engine: the old
+ * {@code isHideRoot()} / {@code isHideXposed()} switches have no boot-time
+ * equivalent. Per-package behaviour is expressed with
+ * {@code PackageRule} instead — see
+ * {@code LaunchController.applyRules()}.</p>
  */
 public class BoxApplication extends Application {
 
     private static final String TAG = "BoxApplication";
 
-    /** Package name of the loader itself, needed by ClientConfiguration. */
+    /** Package name of the loader itself. */
     private static volatile String sHostPackage;
 
     @Override
@@ -30,36 +47,22 @@ public class BoxApplication extends Application {
         super.attachBaseContext(base);
         sHostPackage = base.getPackageName();
 
-        // 1. Same first step as the reference loader.
+        // 1. Engine init. Must run before any other FCore call, in every
+        //    process of this APK (the guest processes instantiate this same
+        //    Application class).
         try {
-            BlackBoxCore.get().closeCodeInit();
+            FCore.get().init(this, true);
         } catch (Throwable t) {
-            Log.e(TAG, "closeCodeInit failed", t);
+            Log.e(TAG, "FCore.init failed", t);
         }
-        // 2. Before the main application is attached.
+
+        // 2. Register the guest-side hook that loads the payload. Because this
+        //    runs in every process, the callback is installed in the :scN guest
+        //    process too, which is where it has to fire.
         try {
-            BlackBoxCore.get().onBeforeMainApplicationAttach(this, base);
+            FCore.get().setApplicationCallback(new GuestPayloadLoader());
         } catch (Throwable t) {
-            Log.e(TAG, "onBeforeMainApplicationAttach failed", t);
-        }
-        // 3. Hand the core our ClientConfiguration.
-        try {
-            BlackBoxCore.get().doAttachBaseContext(base, new LoaderConfiguration());
-        } catch (Throwable t) {
-            Log.e(TAG, "doAttachBaseContext failed", t);
-        }
-        // 4. After the main application is attached.
-        try {
-            BlackBoxCore.get().onAfterMainApplicationAttach(this, base);
-        } catch (Throwable t) {
-            Log.e(TAG, "onAfterMainApplicationAttach failed", t);
-        }
-        // 5. Register the guest-side hook that loads the payload in the process
-        //    the game actually runs in.
-        try {
-            BlackBoxCore.get().addAppLifecycleCallback(new GuestPayloadLoader());
-        } catch (Throwable t) {
-            Log.e(TAG, "addAppLifecycleCallback failed", t);
+            Log.e(TAG, "setApplicationCallback failed", t);
         }
     }
 
@@ -67,73 +70,38 @@ public class BoxApplication extends Application {
     public void onCreate() {
         super.onCreate();
         try {
-            BlackBoxCore.get().doCreate();
+            Log.i(TAG, "loader started: host=" + sHostPackage
+                    + " engine=" + FCore.get().getVersion()
+                    + " process=" + FCore.get().getProcessType());
         } catch (Throwable t) {
-            Log.e(TAG, "doCreate failed", t);
-        }
-        try {
-            BlackBoxCore.get()
-                    .addServiceAvailableCallback(
-                            () -> Log.i(TAG, "sandbox services available"));
-        } catch (Throwable t) {
-            Log.e(TAG, "addServiceAvailableCallback failed", t);
+            Log.w(TAG, "engine state unavailable", t);
         }
     }
 
     /**
-     * Runs inside the virtual app's own process. This is the only place where
-     * loading {@code libzyn-bs.so} can have an effect: the library creates the
-     * game's lifecycle, and that lifecycle lives here.
+     * Runs inside the virtual app's own {@code :scN} process. This is the only
+     * place where loading {@code libzyn-bs.so} can have an effect: the library
+     * creates the game's lifecycle, and that lifecycle lives here.
+     *
+     * <p>Note the signature difference from the previous engine: SpaceCore
+     * hands over package name, process name and user id only — not the guest
+     * {@link Application} instance.</p>
      */
-    private static final class GuestPayloadLoader extends AppLifecycleCallback {
+    private static final class GuestPayloadLoader implements ApplicationCallback {
 
         @Override
-        public void beforeApplicationOnCreate(
-                String packageName, String processName, Application application, int userId) {
+        public void beforeCreateApplication(String packageName, String processName, int userId) {
             if (!GameConfig.PACKAGE_NAME.equals(packageName)) {
                 return;
             }
             Log.i(TAG, "guest " + processName + " for " + packageName + " -> loading payload");
             NativeBridge.loadInGuestProcess();
         }
-    }
-
-    /**
-     * Same overrides the reference host app exposes. Note what is deliberately
-     * absent: {@code isEnableLauncherActivity} is NOT overridden. It does not
-     * mean "no launcher UI" — {@code BlackBoxCore.startActivity()} uses it to
-     * choose the launch path, and forcing it false makes {@code launchApk()}
-     * report success while never bringing the game up.
-     */
-    private static final class LoaderConfiguration extends ClientConfiguration {
 
         @Override
-        public String getHostPackageName() {
-            return sHostPackage;
-        }
-
-        @Override
-        public boolean isHideRoot() {
-            return true;
-        }
-
-        // This engine replaced `isUseVpnNetwork()` / `isDisableFlagSecure()`
-        // (which the previous engines had) with `isHideXposed()`. Overriding the
-        // old two is a compile error here: "method does not override or
-        // implement a method from a supertype".
-        @Override
-        public boolean isHideXposed() {
-            return true;
-        }
-
-        @Override
-        public boolean isEnableDaemonService() {
-            return false;
-        }
-
-        @Override
-        public boolean requestInstallPackage(File file, int userId) {
-            return false;
+        public void afterCreatedApplication(
+                Application application, String packageName, String processName, int userId) {
+            Log.i(TAG, "guest application created: " + packageName + " in " + processName);
         }
     }
 }
