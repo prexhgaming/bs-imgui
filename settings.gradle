@@ -18,4 +18,8 @@ dependencyResolutionManagement {
 
 include ':app'
 
+// The BlackBox core, vendored as a single module: upstream's Bcore +
+// black-reflection + compiler folded into one folder (see bcore/build.gradle).
+include ':bcore'
+
 rootProject.name = 'BSKillerLoader'

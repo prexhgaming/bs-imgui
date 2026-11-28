@@ -20,8 +20,8 @@ if (hasSigning) {
 
 android {
     namespace 'com.zyn.bs'
-    // 36 to match the 36.1.0 build tools. The engine AAR declares no
-    // minCompileSdk, so this is a toolchain choice, not an AAR requirement.
+    // 36 to match the 36.1.0 build tools. The bcore module declares no
+    // minCompileSdk, so this is a toolchain choice, not a library requirement.
     compileSdk 36
     buildToolsVersion '36.1.0'
     ndkVersion rootProject.ext.ndkVersion
@@ -39,7 +39,9 @@ android {
         // inheriting it.
         manifestPlaceholders = [debuggable: 'false']
 
-        // Must match jni/Application.mk (APP_ABI := armeabi-v7a).
+        // The app narrows the ABI set: the core library builds both ABIs, but
+        // only the 32-bit one is useful here. Must match jni/Application.mk
+        // (APP_ABI := armeabi-v7a) and the target game's 32-bit payload.
         ndk {
             abiFilters 'armeabi-v7a'
         }
@@ -48,11 +50,11 @@ android {
         // not here.
     }
 
-    // The engine AAR expects android:extractNativeLibs="true", and AGP does NOT
+    // The core expects android:extractNativeLibs="true", and AGP does NOT
     // merge that attribute from libraries — it is driven by this DSL instead.
-    // Keeping it true extracts the engine's .so files to
-    // /data/app/<pkg>/lib/arm/ exactly as in upstream's own (working) build, so
-    // any dlopen-by-absolute-path inside the engine keeps working.
+    // Keeping it true extracts the .so files to /data/app/<pkg>/lib/arm/
+    // exactly as in upstream's own (working) build, so any
+    // dlopen-by-absolute-path inside the core keeps working.
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -127,8 +129,7 @@ android {
     }
 
     compileOptions {
-        // 21 (JDK 21 in CI). The engine AAR itself is compiled for Java 8,
-        // which is fine — Java 21 can consume it.
+        // 21 (JDK 21 in CI). The bcore module is compiled for Java 21 as well.
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
@@ -149,8 +150,8 @@ android {
 }
 
 dependencies {
-    // The sandbox engine, consumed as a plain local AAR from app/libs/.
-    implementation fileTree(dir: "libs", includes: ["*aar"])
+    // The BlackBox core, built from the vendored bcore/ module.
+    implementation project(':bcore')
     implementation 'androidx.appcompat:appcompat:1.2.0'
     implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'com.google.android.material:material:1.11.0'
@@ -158,6 +159,4 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.squareup.okio:okio:3.9.0'
     implementation 'com.github.tiann:FreeReflection:3.2.2'
-    implementation 'com.github.CodingGay.BlackReflection:core:1.1.4'
-    annotationProcessor 'com.github.CodingGay.BlackReflection:compiler:1.1.4'
 }

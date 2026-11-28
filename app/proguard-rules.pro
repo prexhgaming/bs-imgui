@@ -4,10 +4,10 @@
 # shrunk and renamed. Components declared in AndroidManifest.xml (Application,
 # Activity, services) are kept automatically by AGP, so they need no rule here.
 #
-# The BlackBox engine keeps ITSELF through the consumer ProGuard rules inside
-# app/libs/Bcore-release.aar, which AGP merges into this build automatically. The
-# explicit keeps further down are belt-and-braces for the classes the engine
-# reaches by name (its reflection mirrors and the proxy pools).
+# The BlackBox core is built from the vendored bcore/ module and supplies its own
+# consumer rules (bcore/consumer-rules.pro), which AGP merges automatically. The
+# explicit keeps below are belt-and-braces for the classes it reaches by name
+# (its reflection mirrors, the generated *_Proxy classes and the proxy pools).
 
 # ---------------------------------------------------------------------------
 # JNI — native methods are resolved by their Java name, which must not change.
@@ -17,13 +17,14 @@
 }
 
 # ---------------------------------------------------------------------------
-# BlackBox engine (app/libs/Bcore-release.aar)
+# BlackBox core (bcore/ module)
 # ---------------------------------------------------------------------------
-# The AAR ships consumer rules, but the engine also resolves mirror classes by
-# name at runtime, so the whole surface is pinned here as well. There is no
-# licence/activation class in this engine — nothing of that kind to keep.
+# The core resolves mirror classes and the generated reflection proxies by name
+# at runtime, so the whole surface is pinned here as well. There is no
+# licence/activation class in this core — nothing of that kind to keep.
 -keep class top.niunaijun.blackbox.** { *; }
 -keep class top.niunaijun.jnihook.** { *; }
+-keep class top.niunaijun.blackreflection.** { *; }
 -keep class mirror.** { *; }
 -keep class black.** { *; }
 -keep class com.android.** { *; }

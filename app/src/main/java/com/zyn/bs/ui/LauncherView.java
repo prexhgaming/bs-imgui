@@ -246,6 +246,37 @@ public final class LauncherView extends FrameLayout {
         setButtonEnabled(true);
     }
 
+    /** Startup probe: looking for the game on the device. */
+    public void showChecking() {
+        chip(R.string.status_checking, Theme.BUSY, Theme.BUSY_WASH);
+        pulse.setPulsing(true);
+        hintView.setText(R.string.hint_checking);
+        sweep.setActive(true);
+        setButtonEnabled(false);
+    }
+
+    /** Automatic GMS install into the sandbox, part of the setup pass. */
+    public void showGmsBusy() {
+        chip(R.string.status_gms, Theme.BUSY, Theme.BUSY_WASH);
+        pulse.setPulsing(true);
+        hintView.setText(R.string.hint_gms);
+        sweep.setActive(true);
+        setButtonEnabled(false);
+    }
+
+    /**
+     * The game is absent from the device: the only useful action is the Play
+     * Store listing, so the button becomes that and stays tappable.
+     */
+    public void showNeedsStore(String label) {
+        chip(R.string.status_not_installed, Theme.ERROR, Theme.ERROR_WASH);
+        pulse.setPulsing(false);
+        hintView.setText(getContext().getString(R.string.hint_store, label));
+        buttonView.setText(R.string.open_play_store);
+        sweep.setActive(false);
+        setButtonEnabled(true);
+    }
+
     public void showBusy(int statusRes, int hintRes) {
         chip(statusRes, Theme.BUSY, Theme.BUSY_WASH);
         pulse.setPulsing(true);

@@ -1,17 +1,16 @@
 name: Android Build
 
-# Builds and signs the loader APK with Gradle. Gradle drives the payload's
-# native build itself (ndk-build over app/src/main/jni). The BlackBox engine
-# (app/libs/Bcore-release.aar) needs no native build at all: its prebuilt .so files
-# ship inside the AAR.
+# Builds and signs the loader APK with Gradle. Gradle drives BOTH native builds
+# itself: the payload (ndk-build over app/src/main/jni) and the BlackBox core
+# (ndk-build over bcore/src/main/cpp).
 #
 # Only `assembleRelease` is built. AGP force-disables R8 obfuscation AND
 # optimisation for any `debuggable` build type, so a release build is the only
 # one whose classes are actually renamed; the release build type is also signed
 # with OUR certificate, so the APK installs as an update over an existing one.
 #
-# The engine is consumed straight from the AAR committed in app/libs/, so every
-# build packages exactly the engine that is in the repository.
+# The core is compiled from the vendored bcore/ module, so every build packages
+# exactly the core source that is in the repository.
 #
 # Reporting:
 #   - failure -> the full build log (build.log) to Telegram
@@ -135,9 +134,9 @@ jobs:
             echo "== gradle $(gradle --version 2>/dev/null | grep -m1 '^Gradle' || echo '?') =="
             echo "== ndk: ${NDK_VERSION} =="
             grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' app/src/main/jni/Application.mk || true
-            # Fingerprint the engine AAR so a stale or locally edited engine is
-            # visible in the log.
-            echo "== engine: $(sha256sum app/libs/Bcore-release.aar | cut -d' ' -f1 | cut -c1-16) (app/libs/Bcore-release.aar) =="
+            # Fingerprint the vendored core so a local edit is visible in the log.
+            echo "== core: $(find bcore/src -type f | wc -l) files, $(cat bcore/src/main/cpp/Application.mk | tr -d '[:space:]' | grep -o 'APP_ABI.*' | head -c 60) =="
+            echo "== core fingerprint: $(find bcore/src -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1 | cut -c1-16) =="
             echo "== started: $(date -u +%FT%TZ) =="
             echo
           } | tee "$LOG_FILE"
@@ -171,11 +170,15 @@ jobs:
             echo "apk_bytes=$(wc -c < "$apk")"
           } >> "$GITHUB_OUTPUT"
 
-          # The payload native lib must be inside the APK. The engine's own .so
-          # files come from app/libs/Bcore-release.aar and are reported below instead of
-          # being asserted by name, so an engine update cannot fail the build.
+          # Both native builds must land in the APK: our payload and the core.
+          # The app filters ABIs to armeabi-v7a, so only that directory is
+          # expected even though the core builds arm64-v8a too.
           if ! unzip -l "$apk" | grep -q "lib/armeabi-v7a/libzyn-bs.so"; then
             echo "::error::lib/armeabi-v7a/libzyn-bs.so is missing from $apk"
+            exit 1
+          fi
+          if ! unzip -l "$apk" | grep -q "lib/armeabi-v7a/libblackbox.so"; then
+            echo "::error::lib/armeabi-v7a/libblackbox.so is missing from $apk"
             exit 1
           fi
           echo "-- native libs in APK:"

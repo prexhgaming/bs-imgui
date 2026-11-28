@@ -19,10 +19,9 @@ ext {
     targetSdkVersion = 28
     minSdk = 24
 
-    // The payload's NDK (pinned again in app/build.gradle). It is the only
-    // native build left: the BlackBox engine (app/libs/Bcore-release.aar) ships
-    // its .so files prebuilt, so there is no engine NDK, no CMake project and no
-    // gradle-driven CMake install.
+    // Shared by both native builds: the payload (app/src/main/jni) and the
+    // BlackBox core (bcore/src/main/cpp). Both need r26+ for
+    // APP_SUPPORT_FLEXIBLE_PAGE_SIZES (16 KB page sizes).
     ndkVersion = "27.0.12077973"
 }
 
@@ -31,6 +30,6 @@ task clean(type: Delete) {
 }
 
 // There is deliberately NO flat-jar packaging task here.
-// The engine is consumed as a plain local AAR (app/build.gradle declares
-// `fileTree(dir: "libs", includes: ["*aar"])`), so Gradle always resolves the
-// exact AAR committed in app/libs/ and can never reuse a stale prebuilt jar.
+// The core is built from the vendored bcore/ module (`implementation
+// project(':bcore')`), so Gradle always compiles it from source and can never
+// reuse a stale prebuilt jar or AAR.

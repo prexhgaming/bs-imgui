@@ -30,9 +30,9 @@
         </activity>
 
         <!--
-            The engine's components (the sandbox services/providers, the guest
+            The core's components (the sandbox services/providers, the guest
             process pool, the proxy activities, the file provider, ...) are
-            merged in from app/libs/Bcore-release.aar. Do not declare them here.
+            merged in from the bcore/ module. Do not declare them here.
         -->
         <!--
             android:debuggable is pinned above through ${debuggable} because a

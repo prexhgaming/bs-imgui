@@ -8,7 +8,9 @@
     <string name="game_subtitle">IMMERSIVE SANDBOX EXPERIENCE</string>
 
     <string name="status_ready">READY TO PLAY</string>
+    <string name="status_checking">CHECKING DEVICE…</string>
     <string name="status_installing">INSTALLING SANDBOX…</string>
+    <string name="status_gms">INSTALLING GMS…</string>
     <string name="status_launching">ENTERING SANDBOX…</string>
     <string name="status_running">GAME RUNNING</string>
     <string name="status_not_installed">GAME NOT INSTALLED</string>
@@ -17,11 +19,15 @@
     <string name="tap_hint">Tap to enter the sandbox</string>
     <string name="tap_hint_install">Install %1$s to continue</string>
     <string name="tap_hint_running">Tap to launch again</string>
+    <string name="hint_checking">Looking for the game on this device…</string>
     <string name="hint_installing">Preparing the sandbox, please wait…</string>
+    <string name="hint_gms">Installing Google services into the sandbox…</string>
+    <string name="hint_store">%1$s is not on this device. Install it from the Play Store, then come back.</string>
     <string name="hint_launching">Starting the game…</string>
 
     <string name="launch_game">LAUNCH GAME</string>
     <string name="install_game">INSTALL GAME</string>
+    <string name="open_play_store">GET IT ON PLAY STORE</string>
 
     <string name="error_not_installed">The game is not installed on this device.</string>
     <string name="error_install_failed">Could not install the game into the sandbox.</string>
