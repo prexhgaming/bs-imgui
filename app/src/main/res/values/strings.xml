@@ -25,5 +25,6 @@
 
     <string name="error_not_installed">The game is not installed on this device.</string>
     <string name="error_install_failed">Could not install the game into the sandbox.</string>
+    <string name="error_launch_failed">The sandbox could not start the game.</string>
     <string name="error_no_store">No Play Store app found on this device.</string>
 </resources>

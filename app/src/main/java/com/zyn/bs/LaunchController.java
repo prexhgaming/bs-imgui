@@ -2,35 +2,35 @@ package com.zyn.bs;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
 
 /**
- * The launch sequence, in the same order the reference loader used:
+ * Install-then-launch, driven purely by the core's public API.
  *
- * <ol>
- *   <li>already cloned inside the sandbox → launch</li>
- *   <li>installed on the device → clone it into the sandbox, then launch</li>
- *   <li>not installed anywhere → error</li>
- * </ol>
+ * <p>The game is always cloned from the copy that is <em>already installed on the
+ * device</em>, by package name:</p>
  *
- * <p>Cloning is a single core call: {@code installPackageAsUser} copies the APK
- * into the sandbox, so this class never touches storage itself. There is no OBB
- * step: the game ships as one APK with no expansion file.</p>
+ * <pre>BlackBoxCore.get().installPackageAsUser(packageName, userId)</pre>
  *
- * <p>Every core call goes through {@link BlackBoxCore}. There is no activation
- * step: the core carries no licence gate and sets itself up in
- * {@code BoxApplication.attachBaseContext}.</p>
+ * <p>That call resolves the system APK through the host {@code PackageManager}
+ * and registers it with {@code InstallOption.installBySystem()}. The system flag
+ * means the box references the existing system APK instead of copying it
+ * ({@code CopyExecutor} does nothing for it), so the call is cheap, needs no
+ * storage permission and no file picker — it only takes the package name.</p>
  *
- * <p>There is no worker thread and no artificial delay: the whole sequence is
- * plain core API calls on the caller's thread, the same way the reference app
- * does it ({@code AutoImportManager.importIfNeeded()} then
- * {@code launchApk()}). The payload is not armed here at all — it is loaded
- * inside the guest process by
+ * <p>It is deliberately run on <em>every</em> launch rather than only when
+ * {@code isInstalled()} is false: a sandbox entry left behind by an earlier
+ * install (or an earlier engine) can be present but broken, in which case the
+ * old flow skipped the install and {@code launchApk} then silently did nothing.
+ * Re-registering from the system package is cheap and always leaves a valid
+ * entry.</p>
+ *
+ * <p>There is no worker thread and no artificial delay — every call here is
+ * metadata-only. The payload is not touched here at all: it is loaded inside the
+ * guest process by
  * {@code BoxApplication.GuestPayloadLoader.beforeApplicationOnCreate}.</p>
  */
 public class LaunchController {
@@ -54,7 +54,6 @@ public class LaunchController {
 
     private final Context context;
     private final String packageName;
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Callback callback;
 
     private volatile boolean busy;
@@ -75,31 +74,40 @@ public class LaunchController {
             return;
         }
         busy = true;
-        emit(State.IDLE, null);
-        // Run the full sequence: install-if-missing-then-launch. No extra
-        // worker thread, no artificial delay — just the core API, same as the
-        // reference app's AutoImportManager + launchApk flow.
         resolveAndRun();
     }
 
     private void resolveAndRun() {
-        final boolean inSandbox;
-        final boolean onDevice;
-        try {
-            inSandbox = BlackBoxCore.get().isInstalled(packageName, USER_ID);
-            onDevice = isInstalledOnDevice();
-        } catch (Throwable t) {
-            Log.e(TAG, "state resolution failed", t);
-            fail("Could not read the sandbox state.");
+        if (!isInstalledOnDevice()) {
+            Log.e(TAG, packageName + " is not installed on the device");
+            fail(context.getString(R.string.error_not_installed));
             return;
         }
 
-        if (inSandbox) {
-            launchGame();
-        } else if (onDevice) {
-            installGame();
-        } else {
-            fail(context.getString(R.string.error_not_installed));
+        if (!installFromSystem()) {
+            return;
+        }
+
+        if (launchGame()) {
+            return;
+        }
+
+        // The entry existed but produced no launch intent. Wipe it and re-clone
+        // once — this is the recovery path for a stale sandbox entry.
+        Log.w(TAG, "launch failed, re-cloning " + packageName + " from the system package");
+        try {
+            BlackBoxCore.get().uninstallPackageAsUser(packageName, USER_ID);
+        } catch (Throwable t) {
+            Log.w(TAG, "uninstall before retry failed", t);
+        }
+        if (!installFromSystem()) {
+            return;
+        }
+        if (!launchGame()) {
+            // Without this the UI would sit on "ENTERING SANDBOX…" forever with
+            // the button disabled, which is exactly how a failed launch used to
+            // present itself as "nothing happens".
+            fail(context.getString(R.string.error_launch_failed));
         }
     }
 
@@ -114,63 +122,80 @@ public class LaunchController {
     }
 
     /**
-     * Clone the device install into the sandbox, then launch. No OBB handling:
-     * the game ships as a single APK with no expansion file.
+     * Registers the device's own APK with the sandbox.
+     *
+     * @return true when the sandbox holds a usable entry afterwards.
      */
-    private void installGame() {
+    private boolean installFromSystem() {
         emit(State.INSTALLING, context.getString(R.string.status_installing));
         try {
             InstallResult result = BlackBoxCore.get()
                     .installPackageAsUser(packageName, USER_ID);
             if (result != null && !result.success) {
                 Log.e(TAG, "installPackageAsUser failed: " + result.msg);
-                fail(context.getString(R.string.error_install_failed));
-                return;
+                // An older copy may still be usable; prefer launching it over
+                // refusing outright, but only if it really is registered.
+                if (isInSandbox()) {
+                    Log.w(TAG, "keeping the existing sandbox copy");
+                    return true;
+                }
+                fail(result.msg != null && !result.msg.isEmpty()
+                        ? result.msg
+                        : context.getString(R.string.error_install_failed));
+                return false;
             }
+            Log.i(TAG, "cloned " + packageName + " from the system package");
+            return true;
         } catch (Throwable t) {
             Log.e(TAG, "installPackageAsUser threw", t);
-            fail(context.getString(R.string.error_install_failed));
-            return;
+            fail(context.getString(R.string.error_install_failed) + "\n" + t.getMessage());
+            return false;
         }
-        launchGame();
     }
 
-    /** Launch the sandboxed game. The guest AppLifecycleCallback loads the payload. */
-    private void launchGame() {
-        emit(State.LAUNCHING, context.getString(R.string.status_launching));
-        final boolean started;
+    private boolean isInSandbox() {
         try {
-            started = BlackBoxCore.get().launchApk(packageName, USER_ID);
+            return BlackBoxCore.get().isInstalled(packageName, USER_ID);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Hands the launch to the core.
+     *
+     * @return true when the core reported that it started the game.
+     */
+    private boolean launchGame() {
+        emit(State.LAUNCHING, context.getString(R.string.status_launching));
+        try {
+            if (!BlackBoxCore.get().launchApk(packageName, USER_ID)) {
+                Log.e(TAG, "launchApk returned false (no launch intent for " + packageName + ")");
+                return false;
+            }
         } catch (Throwable t) {
             Log.e(TAG, "launchApk threw", t);
-            fail(context.getString(R.string.error_install_failed));
-            return;
+            return false;
         }
-        if (!started) {
-            Log.e(TAG, "launchApk returned false (no launch intent?)");
-            fail(context.getString(R.string.error_install_failed));
-            return;
-        }
+        busy = false;
         emit(State.RUNNING, context.getString(R.string.status_running));
-        // Payload loads in the guest process via
-        // BoxApplication.GuestPayloadLoader.beforeApplicationOnCreate.
+        return true;
     }
 
     private void fail(String message) {
         busy = false;
+        Log.e(TAG, "launch sequence failed: " + message);
         emit(State.ERROR, message);
     }
 
     private void emit(State state, String message) {
-        busy = state == State.RUNNING;
         if (callback != null) {
             callback.onStateChanged(state, message);
         }
     }
 
-    /** Releases pending callbacks; call from {@code onDestroy}. */
+    /** Releases state; call from {@code onDestroy}. */
     public void destroy() {
-        mainHandler.removeCallbacksAndMessages(null);
         busy = false;
     }
 }

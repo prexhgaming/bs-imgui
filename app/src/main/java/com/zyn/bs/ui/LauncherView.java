@@ -8,6 +8,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -15,6 +16,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.zyn.bs.R;
@@ -24,8 +26,14 @@ import com.zyn.bs.crypto.AssetCrypto;
  * The loader's home screen, built entirely in code — no layout XML or assets
  * are taken from the reference project.
  *
- * <p>Visual order, top to bottom: brand mark, wallpaper, circular game icon,
- * game title, tagline, status line, tap hint, gradient action button, footer.</p>
+ * <p>Layout is a single vertical stack with the centre block on
+ * {@code layout_weight = 1}: header on top, action block at the bottom, and the
+ * icon/title/status block taking whatever space is left. That replaces the old
+ * arrangement, which pinned the centre block at a fixed {@code 190dp} from the
+ * top <em>and</em> anchored the action block to the bottom — on shorter screens
+ * (and whenever the title wrapped, e.g. while the package name stood in for the
+ * label) the two overlapped and content spilled off-screen. The centre block is
+ * also scrollable, so it can never clip on a very small display.</p>
  */
 public class LauncherView extends FrameLayout {
 
@@ -50,7 +58,8 @@ public class LauncherView extends FrameLayout {
      */
     private static final String ASSET_WALLPAPER = "a7f3" + "c9" + ".bin";
 
-    private final ImageView wallpaper;
+    private final View scrimTopView;
+    private final View scrimBottomView;
     private final FrameLayout iconHolder;
     private final ImageView iconView;
     private final TextView titleView;
@@ -65,40 +74,57 @@ public class LauncherView extends FrameLayout {
         super(context);
         setBackgroundColor(0xFF0B0B0D);
 
-        wallpaper = buildWallpaper(context);
-        addView(wallpaper, fullBleed());
+        addView(buildWallpaper(context), fullBleed());
 
-        addView(buildScrim(context, true), scrimTop());
-        addView(buildScrim(context, false), scrimBottom());
+        scrimTopView = buildScrim(true);
+        addView(scrimTopView, scrimParams(Gravity.TOP));
+        scrimBottomView = buildScrim(false);
+        addView(scrimBottomView, scrimParams(Gravity.BOTTOM));
+
+        // ---- root vertical stack ------------------------------------------
+        LinearLayout root = new LinearLayout(context);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(context, 24), dp(context, 38), dp(context, 24), dp(context, 30));
+        addView(root, fullBleed());
 
         // ---- header -------------------------------------------------------
         LinearLayout header = new LinearLayout(context);
-        header.setOrientation(LinearLayout.VERTICAL);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout brandColumn = new LinearLayout(context);
+        brandColumn.setOrientation(LinearLayout.VERTICAL);
 
         TextView brand = text(context, R.string.brand, 15f, COLOR_TEXT);
         brand.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         brand.setLetterSpacing(0.14f);
-        header.addView(brand);
+        brandColumn.addView(brand);
 
         TextView brandSub = text(context, R.string.brand_subtitle, 9.5f, COLOR_FAINT);
         brandSub.setLetterSpacing(0.34f);
         LinearLayout.LayoutParams brandSubLp = wrap();
         brandSubLp.topMargin = dp(context, 5);
-        header.addView(brandSub, brandSubLp);
+        brandColumn.addView(brandSub, brandSubLp);
 
-        LayoutParams headerLp = new LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        headerLp.gravity = Gravity.TOP | Gravity.START;
-        headerLp.setMarginStart(dp(context, 26));
-        headerLp.topMargin = dp(context, 44);
-        addView(header, headerLp);
+        LinearLayout.LayoutParams brandLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        header.addView(brandColumn, brandLp);
 
-        addView(buildMenuButton(context), menuParams(context));
+        header.addView(buildMenuButton(context),
+                new LinearLayout.LayoutParams(dp(context, 42), dp(context, 42)));
+        root.addView(header, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // ---- centre block -------------------------------------------------
+        // ---- centre block (scrollable, takes the free space) --------------
+        ScrollView centreScroll = new ScrollView(context);
+        centreScroll.setFillViewport(true);
+        centreScroll.setClipToPadding(false);
+        centreScroll.setVerticalScrollBarEnabled(false);
+
         LinearLayout centre = new LinearLayout(context);
         centre.setOrientation(LinearLayout.VERTICAL);
-        centre.setGravity(Gravity.CENTER_HORIZONTAL);
+        centre.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.CENTER_VERTICAL);
+        centre.setPadding(0, dp(context, 16), 0, dp(context, 16));
 
         iconHolder = new FrameLayout(context);
         iconView = new ImageView(context);
@@ -107,36 +133,46 @@ public class LauncherView extends FrameLayout {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         iconHolder.setBackground(circleOutline(context));
         iconHolder.setPadding(dp(context, 3), dp(context, 3), dp(context, 3), dp(context, 3));
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(
-                dp(context, 84), dp(context, 84));
-        centre.addView(iconHolder, iconLp);
+        centre.addView(iconHolder, new LinearLayout.LayoutParams(
+                dp(context, 80), dp(context, 80)));
 
-        titleView = text(context, 0, 32f, COLOR_TEXT);
+        // Single line + ellipsis: the title is either the resolved label or, until
+        // resolution finishes, the package name — which used to wrap onto several
+        // lines and push the whole block off the screen.
+        titleView = text(context, 0, 26f, COLOR_TEXT);
         titleView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         titleView.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleLp = wrap();
-        titleLp.topMargin = dp(context, 18);
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        titleLp.topMargin = dp(context, 16);
         centre.addView(titleView, titleLp);
 
         TextView tagline = text(context, R.string.game_subtitle, 10.5f, COLOR_MUTED);
         tagline.setLetterSpacing(0.24f);
         tagline.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams taglineLp = wrap();
-        taglineLp.topMargin = dp(context, 12);
+        tagline.setSingleLine(true);
+        tagline.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams taglineLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        taglineLp.topMargin = dp(context, 10);
         centre.addView(tagline, taglineLp);
 
         statusView = text(context, R.string.status_ready, 11.5f, COLOR_READY);
         statusView.setLetterSpacing(0.22f);
         statusView.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams statusLp = wrap();
-        statusLp.topMargin = dp(context, 20);
+        statusView.setSingleLine(true);
+        statusView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statusLp.topMargin = dp(context, 18);
         centre.addView(statusView, statusLp);
 
-        LayoutParams centreLp = new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        centreLp.gravity = Gravity.CENTER_HORIZONTAL;
-        centreLp.topMargin = dp(context, 190);
-        addView(centre, centreLp);
+        centreScroll.addView(centre, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(centreScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         // ---- bottom block -------------------------------------------------
         LinearLayout bottom = new LinearLayout(context);
@@ -145,31 +181,34 @@ public class LauncherView extends FrameLayout {
 
         hintView = text(context, R.string.tap_hint, 12.5f, COLOR_MUTED);
         hintView.setGravity(Gravity.CENTER);
-        bottom.addView(hintView, wrap());
+        hintView.setMaxLines(4);
+        hintView.setEllipsize(TextUtils.TruncateAt.END);
+        bottom.addView(hintView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         buttonView = text(context, R.string.launch_game, 14.5f, COLOR_TEXT);
         buttonView.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         buttonView.setLetterSpacing(0.16f);
         buttonView.setGravity(Gravity.CENTER);
+        buttonView.setSingleLine(true);
+        buttonView.setEllipsize(TextUtils.TruncateAt.END);
         buttonView.setClickable(true);
         buttonView.setFocusable(true);
         buttonView.setBackground(pillButton(context));
         buttonView.setElevation(dp(context, 10));
         LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 58));
-        buttonLp.topMargin = dp(context, 18);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 56));
+        buttonLp.topMargin = dp(context, 16);
         bottom.addView(buttonView, buttonLp);
 
         pulse = new PulseDots(context);
         LinearLayout.LayoutParams pulseLp = wrap();
-        pulseLp.topMargin = dp(context, 22);
+        pulseLp.topMargin = dp(context, 18);
+        pulseLp.gravity = Gravity.CENTER_HORIZONTAL;
         bottom.addView(pulse, pulseLp);
 
-        LayoutParams bottomLp = new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        bottomLp.gravity = Gravity.BOTTOM;
-        bottomLp.setMargins(dp(context, 24), 0, dp(context, 24), dp(context, 40));
-        addView(bottom, bottomLp);
+        root.addView(bottom, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     // ---------------------------------------------------------------- API
@@ -185,7 +224,7 @@ public class LauncherView extends FrameLayout {
 
     /** Paints the resolved game icon; a null icon leaves the ring empty. */
     public void bindGameIcon(Drawable icon) {
-        int size = dp(getContext(), 84);
+        int size = dp(getContext(), 80);
         Drawable circular = CircleIcon.of(getResources(), icon, size);
         iconView.setImageDrawable(circular);
         iconView.setVisibility(circular == null ? View.INVISIBLE : View.VISIBLE);
@@ -286,8 +325,8 @@ public class LauncherView extends FrameLayout {
         worker.start();
     }
 
-    private View buildScrim(Context context, boolean top) {
-        View view = new View(context);
+    private View buildScrim(boolean top) {
+        View view = new View(getContext());
         int[] colors = top
                 ? new int[]{0xC4000000, 0x00000000}
                 : new int[]{0x00000000, 0xE6000000};
@@ -302,6 +341,8 @@ public class LauncherView extends FrameLayout {
         menu.setTextColor(COLOR_TEXT);
         menu.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
         menu.setGravity(Gravity.CENTER);
+        menu.setSingleLine(true);
+
         GradientDrawable circle = new GradientDrawable();
         circle.setShape(GradientDrawable.OVAL);
         circle.setColor(0x33FFFFFF);
@@ -312,14 +353,6 @@ public class LauncherView extends FrameLayout {
                 ColorStateList.valueOf(0x40FFFFFF), circle, mask));
         menu.setClickable(true);
         return menu;
-    }
-
-    private LayoutParams menuParams(Context context) {
-        LayoutParams lp = new LayoutParams(dp(context, 42), dp(context, 42));
-        lp.gravity = Gravity.TOP | Gravity.END;
-        lp.topMargin = dp(context, 40);
-        lp.setMarginEnd(dp(context, 22));
-        return lp;
     }
 
     private Drawable circleOutline(Context context) {
@@ -334,10 +367,10 @@ public class LauncherView extends FrameLayout {
         GradientDrawable fill = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{0xFFFF7A18, 0xFFE0201B});
-        fill.setCornerRadius(dp(context, 29));
+        fill.setCornerRadius(dp(context, 28));
 
         GradientDrawable mask = new GradientDrawable();
-        mask.setCornerRadius(dp(context, 29));
+        mask.setCornerRadius(dp(context, 28));
         mask.setColor(Color.WHITE);
 
         return new RippleDrawable(ColorStateList.valueOf(0x59FFFFFF), fill, mask);
@@ -364,19 +397,10 @@ public class LauncherView extends FrameLayout {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
-    private static LayoutParams scrimTop() {
+    private static LayoutParams scrimParams(int gravity) {
         LayoutParams lp = new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.gravity = Gravity.TOP;
-        lp.height = 0;
-        return lp;
-    }
-
-    private static LayoutParams scrimBottom() {
-        LayoutParams lp = new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.gravity = Gravity.BOTTOM;
-        lp.height = 0;
+                ViewGroup.LayoutParams.MATCH_PARENT, 0);
+        lp.gravity = gravity;
         return lp;
     }
 
@@ -388,13 +412,14 @@ public class LauncherView extends FrameLayout {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         // Scrims are proportional to the screen height so the artwork's focal
-        // point stays visible on tall and short devices alike.
-        LayoutParams top = (LayoutParams) getChildAt(1).getLayoutParams();
+        // point stays visible on tall and short devices alike. Referenced by
+        // field, not child index, so the layout can be restructured safely.
+        LayoutParams top = (LayoutParams) scrimTopView.getLayoutParams();
         top.height = Math.round(h * 0.34f);
-        getChildAt(1).setLayoutParams(top);
+        scrimTopView.setLayoutParams(top);
 
-        LayoutParams bottom = (LayoutParams) getChildAt(2).getLayoutParams();
+        LayoutParams bottom = (LayoutParams) scrimBottomView.getLayoutParams();
         bottom.height = Math.round(h * 0.46f);
-        getChildAt(2).setLayoutParams(bottom);
+        scrimBottomView.setLayoutParams(bottom);
     }
 }

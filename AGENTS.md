@@ -47,7 +47,20 @@ What differs in this one:
   (`method does not override or implement a method from a supertype`), so when swapping engines check
   `Bcore/.../app/configuration/ClientConfiguration.java` against
   `app/src/main/java/com/zyn/bs/BoxApplication.java`.
-The swap is not half-reversible; the pre-first-swap state is tagged `pre-engine-swap` on `main`.
+- **`AbiUtils.isSupport()` is ARM64-only upstream.** With the box running as a 32-bit process (the
+  payload is `armeabi-v7a`-only by design, see `app/src/main/jni/Application.mk`), a 32-bit game was
+  rejected with "The box does not support 32-bit Application" and never cloned. `AbiUtils` was patched
+  so support is decided by the box's own ABI (`BlackBoxCore.is64Bit() ? is64Bit() : is32Bit()`), with
+  pure-Java APKs always accepted. Do not revert that patch.
+- **Install is always by package name from the system app.** `LaunchController` calls
+  `BlackBoxCore.get().installPackageAsUser(packageName, USER_ID)` on every launch (it is cheap because
+  `FLAG_SYSTEM` only registers the existing system APK — `CopyExecutor` copies nothing), so a stale
+  sandbox entry can never survive a re-launch. The real install error message is surfaced in the UI
+  instead of a generic string.
+- **The loader screen must not overflow.** `LauncherView` is a vertical stack with the centre block on
+  `layout_weight = 1` (scrollable) and the title on a single ellipsized line. Keep it that way; do
+  not re-introduce the old fixed `190dp` top margin + bottom-anchored action block, which overlapped
+  on short screens.
 
 Why source and not an AAR: the original core was a prebuilt `mundo-release.aar` that shipped
 **64-bit only** and was gated on a remote licence server (`MetaActivationManager` → HTTP → native
