@@ -11,18 +11,17 @@
 #include <errno.h>
 #include <GLES3/gl3.h>
 #include "imgui/imgui.h"
-#define LOGD(...)
-#define LOGE(...)
-#define LOGI(...)
+#define LOGD(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "Nexora", fmt, ##__VA_ARGS__)
+#define LOGE(fmt, ...) __android_log_print(ANDROID_LOG_ERROR, "Nexora", fmt, ##__VA_ARGS__)
+#define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO, "Nexora", fmt, ##__VA_ARGS__)
 #include "include/obfuscate.h"
 
-static const char* PACKAGE_NAME = [] {
-static char buf[128]={};
-FILE* f=fopen("/proc/self/cmdline","rb");
-if(f){fread(buf,1,127,f);fclose(f);}
-for(int i=0;i<127;i++) if(buf[i]=='\0') buf[i]=' ';
-return strstr(buf,"newspikeme") ? "com.netease.newspikeme" : "com.netease.newspike";
-}();
+#include "include/hpp/package.h"
+
+static const std::string& PACKAGE_NAME() {
+    static const std::string name = nexora::getPackageName();
+    return name;
+}
 
 #include "include/includes.h"
 #include "AndInlineHook/AndInlineHook.h"
@@ -51,30 +50,26 @@ std::unordered_map<std::string, int> sync_int;
 ImVec2 windowPos = {80, 120};
 std::atomic<bool> menu_visible{true};
 
-// PyRun_StringFlags in libGame.so, found by find_pyrun.py (see that script for
-// the method). Re-run it and change this number when the game updates.
 static constexpr uintptr_t PyRunOffset = 0x024dbcf0;
 
 extern void AddNotification(const char* msg, int r, int g, int b, float dur);
 
-// Defined in draw.h (included further down). Called as soon as the activity -
-// and with it the internal data dir - is known, so the previous run's
-// data.json is gone before anything can read it.
 static inline void sync_with_py_start_cleanup();
 
 extern "C" void ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t savedStateSize) {
     g_activity = activity;
     sync_with_py_start_cleanup();
-    LOGI("✅ Activity created, waiting for bypass thread...");
+    LOGI("✅ Activity created");
 }
 
-static int (*original_connect)(int, const struct sockaddr*, socklen_t) = nullptr;
-static int my_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
-    return original_connect(sockfd, addr, addrlen);
+static const std::string& srcpy_script() {
+    static const std::string s = [] {
+        std::string out = "_PKG_OVERRIDE = '" + PACKAGE_NAME() + "'\n";
+        out += srcpy;
+        return out;
+    }();
+    return s;
 }
-
-static bool (*_hook_bypass)(void*) = nullptr;
-static bool hook_bypass(void*) { return false; }
 
 static int iLoaded = 0, iLoadAt = 2;
 DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4) {
@@ -83,7 +78,7 @@ DEFINES(void*, iMissMyWife, const char* v0, int v1, void* v2, void* v3, void* v4
         iLoaded++;
         if (iLoaded >= iLoadAt && !loaded) {
             loaded = true;
-            _iMissMyWife(srcpy, 257, v2, v2, NULL);
+            _iMissMyWife(srcpy_script().c_str(), 257, v2, v2, NULL);
         }
     }
     return _iMissMyWife(v0, v1, v2, v3, v4);
@@ -121,15 +116,13 @@ void hack_thread() {
     sleep(1);
     uintptr_t libGameBase = stableBase;
     
-    char _pkg_dir[128];
-    snprintf(_pkg_dir, sizeof(_pkg_dir), "/data/data/%s/imgui", PACKAGE_NAME);
-    nexora_mkdir_recursive(_pkg_dir);
+    std::string _pkg_dir = nexora::packagePath("/imgui");
+    nexora_mkdir_recursive(_pkg_dir.c_str());
 
     NetworkBlocker::initialize();
     
     xhook_register(".*\\.so$", "getaddrinfo", (void*)NetworkBlocker::getaddrinfo_hooked, (void**)&orig_getaddrinfo);
-    xhook_register(".*\\.so$", "gethostbyname", (void*)NetworkBlocker::gethostbyname_hooked, (void**)&orig_getaddrinfo);
-    xhook_register(".*\\.so$", "connect", (void*)my_connect, (void**)&original_connect);
+    xhook_register(".*\\.so$", "gethostbyname", (void*)NetworkBlocker::gethostbyname_hooked, (void**)&orig_gethostbyname);
     xhook_refresh(0);
 
     menu_visible = true;

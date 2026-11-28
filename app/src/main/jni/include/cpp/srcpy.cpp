@@ -22,14 +22,26 @@ import json, threading, functools, time, socket, os
 # sync_attrs stays empty, fWidth/fHeight fall back to 1080x720, and C++ then
 # rescales every bone by Height/720 - the ESP drifts far off the players and
 # wobbles as the camera pans.
+# The package name is never hardcoded: this same script runs inside every build
+# of the game (com.netease.newspike, ...newspikeme, sandboxed clones, ...), and a
+# hardcoded name would point every path at the wrong app. C++ resolves it once
+# from /proc/self/cmdline (see include/hpp/package.h) and hands it over as
+# _PKG_OVERRIDE, so both sides always agree on the same data dir. Only if that is
+# missing do we read cmdline ourselves - and if that fails too we return an empty
+# string instead of guessing a name.
 def _proc_pkg():
     try:
-        with open('/proc/self/cmdline', 'rb') as f:
-            name = f.read().split(b'\x00')[0].decode('utf-8', 'replace')
-    except Exception:
-        return 'com.netease.newspike'
+        name = _PKG_OVERRIDE
+    except NameError:
+        name = ''
+    if not name:
+        try:
+            with open('/proc/self/cmdline', 'rb') as f:
+                name = f.read().split(b'\x00')[0].decode('utf-8', 'replace')
+        except Exception:
+            name = ''
     # A sandboxed process is often "<pkg>:<suffix>"; the data dir is per package.
-    return name.split(':')[0] or 'com.netease.newspike'
+    return name.split(':')[0]
 
 _PKG = _proc_pkg()
 # Internal data dir only - the single path C++ writes (GetConfigDir()).
@@ -38,11 +50,12 @@ _PKG = _proc_pkg()
 # entry here would let a stale external file shadow the live internal one.
 # /data/user/0 and /data/data are the same internal dir through different
 # mounts; both spellings are kept because the sandbox may rewrite only one.
+# Empty when _PKG could not be resolved at all: no paths, no false positives.
 _DATA_CANDIDATES = [
     '/data/user/0/%s/files/Nexora/data.json' % _PKG,
     '/data/data/%s/files/Nexora/data.json'   % _PKG,
-]
-DATA_PATH     = _DATA_CANDIDATES[0]
+] if _PKG else []
+DATA_PATH     = _DATA_CANDIDATES[0] if _DATA_CANDIDATES else ''
 UDP_RECV_PORT = 50001   # Python -> C++ (ESP entity data)
 
 _send_sock = None
@@ -70,6 +83,17 @@ def _write_udp(data):
         if isinstance(data, str):
             data = data.encode('utf-8')
         _send_sock.sendto(data, ("127.0.0.1", UDP_RECV_PORT))
+    except Exception:
+        pass
+
+def _log(tag, msg):
+    """Send a log line to C++ via UDP so it appears in Android logcat."""
+    global _send_sock, _udp_initialized
+    if not _udp_initialized:
+        _init_udp()
+    try:
+        payload = json.dumps({"log": "%s | %s" % (tag, msg)})
+        _send_sock.sendto(payload.encode('utf-8'), ("127.0.0.1", UDP_RECV_PORT))
     except Exception:
         pass
 
@@ -131,8 +155,10 @@ def _data_thread():
 _read_data()
 if sync_attrs:
     print(f"[CFG] data.json = {DATA_PATH} ({len(sync_attrs)} keys)")
+    _log("CFG", "data.json = %s (%d keys)" % (DATA_PATH, len(sync_attrs)))
 else:
     print(f"[CFG] data.json not readable yet; pkg={_PKG} candidates={_DATA_CANDIDATES}")
+    _log("CFG", "data.json not readable yet; pkg=%s" % _PKG)
 threading.Thread(target=_data_thread, daemon=True).start()
 
 # ============================================================
@@ -298,6 +324,10 @@ def _dbg(tag, msg):
         print("[NEXORA][%s] %s" % (tag, msg))
     except Exception:
         pass
+    try:
+        _log("[%s]" % tag, msg)
+    except Exception:
+        pass
 
 def _esp_diag(entities):
     global _dbg_last_esp
@@ -344,6 +374,11 @@ def _aim_diag(msg):
 #     dump_log.txt       which accessors worked, what failed and why
 _sdk_prev_flag = False
 _sdk_busy      = False
+# Live state mirrored to the C++ dashboard over UDP.
+_sdk_live_status = 'idle'
+_sdk_live_root   = ''
+_sdk_live_files  = []
+_sdk_live_log    = []
 
 try:
     import sys as _sys
@@ -370,6 +405,9 @@ _SDK_BONE_TOKEN = {
 }
 
 def _sdk_dirs():
+    # No package name resolved -> no candidate dirs (see _proc_pkg).
+    if not _PKG:
+        return []
     return [
         '/storage/emulated/0/Android/data/%s/files/sdk' % _PKG,
         '/sdcard/Android/data/%s/files/sdk' % _PKG,
@@ -395,9 +433,23 @@ def _sdk_pick_dir():
     return None
 
 def _sdk_write(path, text):
+    global _sdk_live_files, _sdk_live_root
     try:
         with open(path, 'w') as f:
             f.write(text)
+        try:
+            if _sdk_live_root:
+                rel = os.path.relpath(path, _sdk_live_root)
+            else:
+                rel = os.path.basename(path)
+        except Exception:
+            rel = os.path.basename(path)
+        if rel not in _sdk_live_files:
+            _sdk_live_files.append(rel)
+        try:
+            _write_udp(json.dumps({"sdk_file": rel}))
+        except Exception:
+            pass
         return True
     except Exception:
         return False
@@ -518,8 +570,16 @@ def _sdk_suggest(short_key, real_names):
 def _sdk_live_models():
     """(label, model) pairs taken from the same entities the ESP walks."""
     out = []
+    # `genv` is provided by the engine in most builds, but a missing attribute
+    # here used to kill the whole lookup (the space fallback never ran because
+    # `getattr(genv, ...)` raised before we reached it). Resolve defensively.
+    _genv = None
     try:
-        av = getattr(genv, 'avatar', None)
+        _genv = genv
+    except Exception:
+        _genv = None
+    try:
+        av = getattr(_genv, 'avatar', None) if _genv is not None else None
         ca = getattr(av, 'combat_avatar', None) if av else None
         m = getattr(ca, 'model', None) if ca else None
         if m:
@@ -527,7 +587,12 @@ def _sdk_live_models():
     except Exception:
         pass
     try:
-        inst = getattr(genv, 'space', None)
+        inst = None
+        if _genv is not None:
+            try:
+                inst = getattr(_genv, 'space', None)
+            except Exception:
+                inst = None
         if not inst:
             inst = Space._instance
         for eid, ent in list((getattr(inst, 'entities', None) or {}).items()):
@@ -728,15 +793,28 @@ def _sdk_dump_api(root, log):
     return written
 
 def _sdk_run():
-    global _sdk_busy
+    global _sdk_busy, _sdk_live_status, _sdk_live_root, _sdk_live_files, _sdk_live_log
     t0 = time.time()
     log = []
+    _sdk_live_files = []
+    _sdk_live_log = []
+    _sdk_live_status = 'running'
     try:
         root = _sdk_pick_dir()
         if not root:
             _dbg('SDK', 'no writable output directory')
             log.append('no writable output directory (tried %s)' % (_sdk_dirs(),))
+            _sdk_live_status = 'failed: no writable dir'
+            try:
+                _write_udp(json.dumps({"sdk_reset": True, "sdk_root": "", "sdk_status": _sdk_live_status}))
+            except Exception:
+                pass
             return
+        _sdk_live_root = root
+        try:
+            _write_udp(json.dumps({"sdk_reset": True, "sdk_root": root, "sdk_status": "running"}))
+        except Exception:
+            pass
         log.append('dir: %s' % root)
         try:
             _sdk_dump_bones(root, log)
@@ -748,10 +826,24 @@ def _sdk_run():
             log.append('api: exception %r' % (e,))
         log.append('elapsed: %.1fs' % (time.time() - t0))
         _sdk_write(os.path.join(root, 'dump_log.txt'), '\n'.join(log) + '\n')
+        _sdk_live_status = 'done'
+        try:
+            _write_udp(json.dumps({"sdk_status": "done", "sdk_root": root,
+                                    "sdk_files": _sdk_live_files,
+                                    "sdk_count": len(_sdk_live_files),
+                                    "sdk_elapsed": round(time.time() - t0, 1)}))
+        except Exception:
+            pass
         _dbg('SDK', 'dump finished -> %s' % root)
         for line in log:
             _dbg('SDK', line)
+            _sdk_live_log.append(line)
     except Exception as e:
+        _sdk_live_status = 'error: %r' % (e,)
+        try:
+            _write_udp(json.dumps({"sdk_status": _sdk_live_status}))
+        except Exception:
+            pass
         try:
             _dbg('SDK', 'dump failed: %r' % (e,))
         except Exception:

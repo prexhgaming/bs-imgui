@@ -19,6 +19,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <android/log.h>
 #include "nlohmann/json.hpp"
 #include "entity.h"
 
@@ -39,6 +40,11 @@ static std::mutex            entities_mutex;
 static std::atomic<uint64_t> update_counter{0};
 static std::atomic<bool>     entity_thread_running{false};
 static std::atomic<int64_t>  g_last_data_ms{0};
+// SDK dumper live data shared with the UI.
+static std::vector<std::string> g_sdk_files;
+static std::string              g_sdk_status = "idle";
+static std::string              g_sdk_root;
+static std::mutex               g_sdk_mutex;
 static constexpr int64_t     STALE_TIMEOUT_MS = 800;
 
 // Resolution the script projected with, so bones can be rescaled to the
@@ -138,6 +144,68 @@ static bool read_and_process_udp() {
     try {
         auto data = json::parse(buf, nullptr, false);
         if (!data.is_object()) return false;
+
+        // Python forwards its own diagnostics here (see _log() in srcpy.cpp).
+        // print() goes to an stdout that logcat often does not show, so without
+        // this branch every Python-side init/dump message was invisible.
+        if (data.contains("log") && data["log"].is_string()) {
+            __android_log_print(ANDROID_LOG_INFO, "NexoraPy", "%s",
+                                data["log"].get<std::string>().c_str());
+            return true;
+        }
+
+        // SDK dumper live data (file list / status) sent by the Python side.
+        // These datagrams carry no "players" key, so handle them here and return
+        // before touching the entity list.
+        bool is_sdk = false;
+        if (data.contains("sdk_reset") || data.contains("sdk_file") ||
+            data.contains("sdk_status") || data.contains("sdk_files")) is_sdk = true;
+        if (data.contains("sdk") && data["sdk"].is_object()) is_sdk = true;
+        if (is_sdk) {
+            std::lock_guard<std::mutex> lk(g_sdk_mutex);
+            if (data.contains("sdk_reset")) {
+                g_sdk_files.clear();
+                g_sdk_status = data.value("sdk_status", std::string("running"));
+                if (data.contains("sdk_root") && data["sdk_root"].is_string())
+                    g_sdk_root = data["sdk_root"].get<std::string>();
+            }
+            if (data.contains("sdk_file") && data["sdk_file"].is_string()) {
+                std::string f = data["sdk_file"].get<std::string>();
+                if (std::find(g_sdk_files.begin(), g_sdk_files.end(), f) == g_sdk_files.end())
+                    g_sdk_files.push_back(f);
+            }
+            if (data.contains("sdk_files") && data["sdk_files"].is_array()) {
+                for (const auto& it : data["sdk_files"]) {
+                    if (!it.is_string()) continue;
+                    std::string f = it.get<std::string>();
+                    if (std::find(g_sdk_files.begin(), g_sdk_files.end(), f) == g_sdk_files.end())
+                        g_sdk_files.push_back(f);
+                }
+            }
+            if (data.contains("sdk") && data["sdk"].is_object()) {
+                const auto& s = data["sdk"];
+                if (s.contains("status") && s["status"].is_string())
+                    g_sdk_status = s["status"].get<std::string>();
+                if (s.contains("root") && s["root"].is_string())
+                    g_sdk_root = s["root"].get<std::string>();
+                if (s.contains("files") && s["files"].is_array()) {
+                    for (const auto& it : s["files"]) {
+                        if (!it.is_string()) continue;
+                        std::string f = it.get<std::string>();
+                        if (std::find(g_sdk_files.begin(), g_sdk_files.end(), f) == g_sdk_files.end())
+                            g_sdk_files.push_back(f);
+                    }
+                }
+            }
+            if (data.contains("sdk_status") && data["sdk_status"].is_string())
+                g_sdk_status = data["sdk_status"].get<std::string>();
+            if (data.contains("sdk_root") && data["sdk_root"].is_string())
+                g_sdk_root = data["sdk_root"].get<std::string>();
+            if (data.contains("sdk_count")) {
+                // keep status informative; count derived from list size anyway
+            }
+            return true;
+        }
 
         auto now = steady_clock::now();
 

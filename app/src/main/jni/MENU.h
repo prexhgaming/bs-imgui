@@ -304,22 +304,34 @@ void DrawMenu(ImGuiIO& io) {
     float colW = (cw - 10.f) * 0.5f;
 
     if (activeTab == 0) {
-        NS_Header("Live Stats");
+        NS_Header("SDK Dumper (Live)");
+        needSync |= NS_Toggle("sdk_dump", "Dump SDK", &sync_bool["bSDKDump"]);
+        ImGui::Dummy(ImVec2(0, 6));
+        std::vector<std::string> _sdkFiles;
+        std::string _sdkStatus, _sdkRoot;
         {
-            ImVec2 fp = ImGui::GetCursorScreenPos();
-            NS_Panel(dl, fp, ImVec2(fp.x+cw, fp.y+50));
-            char fpsT[16]; snprintf(fpsT, sizeof(fpsT), "%.0f", io.Framerate);
-            ImU32 fc = io.Framerate > 55 ? C_Success() : (io.Framerate > 30 ? C_Warning() : C_Danger());
-            dl->AddText(ImGui::GetFont(), 26.f, ImVec2(fp.x+12, fp.y+10), fc, fpsT);
-            dl->AddText(ImGui::GetFont(), 13.f, ImVec2(fp.x+12+ImGui::CalcTextSize(fpsT).x+6, fp.y+20), C_TextDim(), "FPS");
-            ImGui::Dummy(ImVec2(0, 58));
+            std::lock_guard<std::mutex> _lk(g_sdk_mutex);
+            _sdkFiles = g_sdk_files;
+            _sdkStatus = g_sdk_status;
+            _sdkRoot = g_sdk_root;
         }
-        ImGui::Dummy(ImVec2(0, 12));
-        NS_Header("About");
-        NS_InfoRow("Version", APP_VERSION);
-        NS_InfoRow("Developer", APP_MAKER);
-        NS_InfoRow("Telegram", APP_CHANNEL);
-        NS_InfoRow("Game", "Blood Strike");
+        char _cntBuf[64];
+        snprintf(_cntBuf, sizeof(_cntBuf), "%d collected", (int)_sdkFiles.size());
+        NS_InfoRow("Status", _sdkStatus.empty() ? "idle" : _sdkStatus.c_str());
+        NS_InfoRow("Files", _cntBuf);
+        if (!_sdkRoot.empty()) NS_InfoRow("Output Dir", _sdkRoot.c_str());
+        ImGui::Dummy(ImVec2(0, 8));
+        float _listH = ImGui::GetContentRegionAvail().y;
+        if (_listH < 80.f) _listH = 80.f;
+        ImGui::BeginChild("sdk_live_files", ImVec2(cw, _listH), true);
+        if (_sdkFiles.empty()) {
+            ImGui::TextDisabled("Toggle 'Dump SDK' on to start collecting.");
+        } else {
+            for (const auto& _f : _sdkFiles) {
+                ImGui::TextUnformatted(_f.c_str());
+            }
+        }
+        ImGui::EndChild();
     }
 
     else if (activeTab == 1) {
@@ -388,10 +400,6 @@ void DrawMenu(ImGuiIO& io) {
                 needSync |= NS_Slider("loot_esp_dist", "Max Distance", &sync_float["fLootESP_MaxDist"], 20, 400, "m");
             }
             ImGui::Dummy(ImVec2(0, 8));
-            // Utility, not a visual: writes the engine's Python API and the live
-            // model's real bone names to Android/data/<pkg>/files/sdk. It is
-            // edge-triggered in Python, so flipping it on dumps exactly once.
-            needSync |= NS_Toggle("sdk_dump", "Dump SDK", &sync_bool["bSDKDump"]);
         }
     }
 
