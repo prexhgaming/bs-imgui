@@ -189,6 +189,19 @@ The loader must not hand-roll any of this:
   `layout_weight = 1` (scrollable) and the title on a single ellipsized line. Keep it that way; do
   not re-introduce the old fixed `190dp` top margin + bottom-anchored action block, which overlapped
   on short screens.
+- **Gson is a hard runtime dependency of the engine, not a transitive nicety.** The AAR shades every
+  other library but leaves `com.google.gson.Gson` unresolved: its obfuscated rule store (`u1`) does
+  `new Gson()` in a static initialiser to (de)serialise `PackageRule` JSON. R8 reports it as
+  `Missing class com.google.gson.Gson (referenced from ...)` — a build *warning*, but the app then dies
+  with `NoClassDefFoundError` the first time rules are touched. `app/build.gradle` pins
+  `com.google.code.gson:gson`. Upstream's demo only got it via `retrofit-converter-gson`, which is why
+  it is easy to miss.
+- **`android:extractNativeLibs` from the AAR is NOT merged by AGP.** The engine's manifest asks for
+  extraction, but AGP drops that attribute from libraries and drives it from the DSL instead, logging
+  `extractNativeLibs is set to true in a dependency's AndroidManifest.xml`. `app/build.gradle` sets
+  `packaging { jniLibs { useLegacyPackaging = true } }` to match upstream's working build, so
+  `libfcore.so`/`libshadowhook.so`/`libpine.so` land in `/data/app/<pkg>/lib/arm/` and any
+  dlopen-by-absolute-path inside the engine keeps working.
 - **Dobby is now linked exactly once** (payload only). The old engine statically linked its own
   `libdobby.a`; SpaceCore uses shadowhook/pine instead, so the former "two Dobbies fight over hook
   slots" hazard is gone. Do not reintroduce a second static Dobby.

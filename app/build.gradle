@@ -48,6 +48,17 @@ android {
         // The target game lives in GameConfig.java, not here.
     }
 
+    // The SpaceCore AAR's manifest sets android:extractNativeLibs="true", and
+    // AGP does NOT merge that attribute from libraries — it is driven by this
+    // DSL instead. Matching it keeps the engine's .so files extracted to
+    // /data/app/<pkg>/lib/arm/ exactly as in upstream's own (working) build, so
+    // any dlopen-by-absolute-path inside libfcore.so keeps working.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     // Gradle drives ndk-build itself: `gradle assembleDebug` compiles
     // jni/Android.mk into libzyn-bs.so and packages it into the APK.
     externalNativeBuild {
@@ -144,6 +155,15 @@ dependencies {
     // com.fvbox:flib:1.0.0 AAR from Spacecore/repo and re-exports it, so
     // com.fvbox.lib.FCore and friends are on this module's compile classpath.
     implementation project(':Spacecore')
+
+    // NOT optional: the engine's rule store (com.fvbox.lib's obfuscated `u1`)
+    // does `new Gson()` in a static initialiser to (de)serialise PackageRule
+    // JSON, but the AAR shades every other dependency and leaves Gson
+    // unresolved. Upstream's demo only got it transitively via
+    // retrofit-converter-gson. Without it, addRule()/init() die with
+    // NoClassDefFoundError. R8 confirms the gap:
+    // "Missing class com.google.gson.Gson (referenced from ...)".
+    implementation 'com.google.code.gson:gson:2.10.1'
 
     // The engine's own runtime dependencies (the AAR bundles its native libs
     // and the hooking/reflection libraries, but not these). Versions mirror the
