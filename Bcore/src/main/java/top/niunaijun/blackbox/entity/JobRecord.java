@@ -2,26 +2,25 @@ package top.niunaijun.blackbox.entity;
 
 import android.app.job.JobInfo;
 import android.app.job.JobService;
-import android.app.Service;
 import android.content.pm.ServiceInfo;
 import android.os.Parcel;
 import android.os.Parcelable;
 
 
-
+/**
+ * updated by alex5402 on 4/2/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class JobRecord implements Parcelable {
 
     public JobInfo mJobInfo;
     public ServiceInfo mServiceInfo;
 
     public JobService mJobService;
-
-    /**
-     * Plain (non-JobService) service instance created for job records whose target is a
-     * normal Service / IntentService (e.g. WhatsApp's com.whatsapp.infra.push
-     * RegistrationIntentService). Not parcelled; only valid in-process.
-     */
-    public Service mPlainService;
 
     public JobRecord() {
     }

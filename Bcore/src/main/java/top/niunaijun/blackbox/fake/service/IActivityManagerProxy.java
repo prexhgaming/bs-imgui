@@ -19,8 +19,8 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Objects;
 
+import black.android.app.BRActivityManager;
 import black.android.app.BRActivityManagerNative;
-import black.android.app.BRActivityManagerOreo;
 import black.android.app.BRLoadedApkReceiverDispatcher;
 import black.android.app.BRLoadedApkReceiverDispatcherInnerReceiver;
 import black.android.app.BRLoadedApkServiceDispatcher;
@@ -61,30 +61,27 @@ import static android.content.Context.RECEIVER_NOT_EXPORTED;
 import static android.content.pm.PackageManager.GET_META_DATA;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
-
+/**
+ * updated by alex5402 on 3/30/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 @ScanClass(ActivityManagerCommonProxy.class)
 public class IActivityManagerProxy extends ClassInvocationStub {
     public static final String TAG = "ActivityManagerStub";
 
     @Override
     protected Object getWho() {
-        Object iActivityManager = null;
-        if (BuildCompat.isOreo()) {
-            iActivityManager = BRActivityManagerOreo.get().IActivityManagerSingleton();
-        } else if (BuildCompat.isL()) {
-            iActivityManager = BRActivityManagerNative.get().gDefault();
-        }
+        Object iActivityManager = BRActivityManager.get().IActivityManagerSingleton();
         return BRSingleton.get(iActivityManager).get();
     }
 
     @Override
     protected void inject(Object base, Object proxy) {
-        Object iActivityManager = null;
-        if (BuildCompat.isOreo()) {
-            iActivityManager = BRActivityManagerOreo.get().IActivityManagerSingleton();
-        } else if (BuildCompat.isL()) {
-            iActivityManager = BRActivityManagerNative.get().gDefault();
-        }
+        Object iActivityManager = BRActivityManager.get().IActivityManagerSingleton();
         BRSingleton.get(iActivityManager)._set_mInstance(proxy);
     }
 
@@ -106,21 +103,21 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         try {
             return super.invoke(proxy, method, args);
         } catch (SecurityException e) {
-            
+            // Handle SecurityExceptions gracefully for all ActivityManager calls
             String methodName = method.getName();
             Slog.w(TAG, "ActivityManager invoke: SecurityException in " + methodName + ", returning safe default", e);
             
-            
+            // Return appropriate default values based on method
             if (methodName.startsWith("set") || methodName.startsWith("update")) {
-                return null; 
+                return null; // For setter methods, return null (success)
             } else if (methodName.startsWith("get") || methodName.startsWith("query")) {
-                return null; 
+                return null; // For getter methods, return null (empty result)
             } else if (methodName.startsWith("start") || methodName.startsWith("bind")) {
-                return false; 
+                return false; // For start/bind methods, return false (not started)
             } else if (methodName.startsWith("stop") || methodName.startsWith("unbind")) {
-                return true; 
+                return true; // For stop/unbind methods, return true (stopped)
             } else {
-                return null; 
+                return null; // Default fallback
             }
         } catch (Exception e) {
             Slog.e(TAG, "ActivityManager invoke: Unexpected error in " + method.getName(), e);
@@ -132,105 +129,21 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class GetContentProvider extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            int authIndex = getAuthIndex();
-            Object auth = args[authIndex];
-            Object content = null;
-
-            if (auth instanceof String) {
-                if (ProxyManifest.isProxy((String) auth)) {
-                    return method.invoke(who, args);
+            try {
+                // Try to use the original method first
+                Object result = method.invoke(who, args);
+                if (result != null) {
+                    return result;
                 }
-
-                if (BuildCompat.isQ()) {
-                    args[1] = BlackBoxCore.getHostPkg();
-                }
-
-                if (auth.equals("settings")
-                        || auth.equals("media")
-                        || auth.equals("telephony")
-                        || ((String) auth).contains("com.google.android.gms")
-                        || ((String) auth).contains("com.android.vending")
-                        || ((String) auth).contains("com.google.android.gsf")
-                        || auth.equals("com.google.android.gms.chimera")
-                        || auth.equals("com.huawei.android.launcher.settings")
-                        || auth.equals("com.hihonor.android.launcher.settings")) {
-                    content = method.invoke(who, args);
-                    ContentProviderDelegate.update(content, (String) auth);
-                    return content;
-                } else {
-                    
-
-                    ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
-                            .resolveContentProvider(
-                                    (String) auth, GET_META_DATA, BActivityThread.getUserId());
-                    if (providerInfo == null) {
-                        
-                        return null;
-                    }
-
-                    
-                    IBinder providerBinder = null;
-                    if (BActivityThread.getAppPid() != -1) {
-                        AppConfig appConfig = BlackBoxCore.getBActivityManager()
-                                .initProcess(
-                                        providerInfo.packageName,
-                                        providerInfo.processName,
-                                        BActivityThread.getUserId());
-                        if (appConfig.bpid != BActivityThread.getAppPid()) {
-                            providerBinder = BlackBoxCore.getBActivityManager()
-                                    .acquireContentProviderClient(providerInfo);
-                        }
-                        args[authIndex] = ProxyManifest.getProxyAuthorities(appConfig.bpid);
-                        args[getUserIndex()] = BlackBoxCore.getHostUserId();
-                    }
-                    if (providerBinder == null)
-                        return null;
-
-                    content = method.invoke(who, args);
-                    Reflector.with(content).field("info").set(providerInfo);
-                    Reflector.with(content)
-                            .field("provider")
-                            .set(
-                                    new ContentProviderStub()
-                                            .wrapper(
-                                                    BRContentProviderNative.get().asInterface(providerBinder),
-                                                    providerInfo.packageName));
-                }
-
-                return content;
+                
+                // If original method fails, return null to prevent crashes
+                Slog.w(TAG, "getContentProvider failed, returning null to prevent crash");
+                return null;
+                
+            } catch (Exception e) {
+                Slog.w(TAG, "Error in getContentProvider, returning null: " + e.getMessage());
+                return null;
             }
-            return method.invoke(who, args);
-        }
-
-        protected int getAuthIndex() {
-            
-            if (BuildCompat.isQ()) {
-                return 2;
-            } else {
-                return 1;
-            }
-        }
-
-        protected int getUserIndex() {
-            return getAuthIndex() + 1;
-        }
-    }
-
-    /**
-     * WhatsApp edition: the app shell delegate calls
-     * ActivityManager.clearApplicationUserData() during makeApplication when
-     * it decides to reset its own state (companion-provisioned clones hit
-     * this). In the sandbox the real call is not allowed (SecurityException
-     * -> catch-all returned null -> NPE unboxing 'boolean' -> fatal in
-     * handleBindApplication). A clone must NEVER be able to wipe its own
-     * sandbox data through this path anyway, so: fake a primitive 'true'.
-     */
-    @ProxyMethod("clearApplicationUserData")
-    public static class ClearApplicationUserData extends MethodHook {
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Slog.w(TAG, "clearApplicationUserData: faking success (sandbox protection)");
-            return true;
         }
     }
 
@@ -254,10 +167,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
 
         public int getRequireForeground() {
-            if (BuildCompat.isOreo()) {
-                return 3;
-            }
-            return -1;
+            // Always return 3 on API 29+ (Oreo+ behavior)
+            return 3;
         }
     }
 
@@ -269,12 +180,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 Intent intent = (Intent) args[1];
                 String resolvedType = (String) args[2];
                 
-                                        
+                                        // Check if the service belongs to the current app
                         if (intent != null && intent.getComponent() != null) {
                             String servicePackage = intent.getComponent().getPackageName();
                             String currentPackage = BActivityThread.getAppPackageName();
 
-                            
+                            // If trying to stop a service from a different package, return false instead of crashing
                             if (!servicePackage.equals(currentPackage)) {
                                 Slog.w(TAG, "StopService: Attempting to stop service from different package: " +
                                         servicePackage + " (current: " + currentPackage + "), returning false");
@@ -301,12 +212,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 ComponentName componentName = (ComponentName) args[0];
                 IBinder token = (IBinder) args[1];
                 
-                                        
+                                        // Check if the service belongs to the current app
                         if (componentName != null) {
                             String servicePackage = componentName.getPackageName();
                             String currentPackage = BActivityThread.getAppPackageName();
 
-                            
+                            // If trying to stop a service from a different package, return true instead of crashing
                             if (!servicePackage.equals(currentPackage)) {
                                 Slog.w(TAG, "StopServiceToken: Attempting to stop service from different package: " +
                                         servicePackage + " (current: " + currentPackage + "), returning true");
@@ -331,27 +242,27 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
-                                        
+                                        // Check if the target package matches the current app
                         if (args != null && args.length >= 2) {
                             String targetPackage = (String) args[1];
                             String currentPackage = BActivityThread.getAppPackageName();
 
-                            
+                            // If trying to set locus context for a different package, return success instead of crashing
                             if (targetPackage != null && !targetPackage.equals(currentPackage)) {
                                 Slog.w(TAG, "SetActivityLocusContext: Attempting to set locus context for different package: " +
                                         targetPackage + " (current: " + currentPackage + "), returning success");
-                                return null; 
+                                return null; // Return null for success
                             }
                         }
                 
-                
+                // Proceed with original call if package matches
                 return method.invoke(who, args);
             } catch (SecurityException e) {
                 Slog.w(TAG, "SetActivityLocusContext: SecurityException caught, returning success", e);
-                return null; 
+                return null; // Return null for success
             } catch (Exception e) {
                 Slog.e(TAG, "SetActivityLocusContext: Error setting locus context", e);
-                return null; 
+                return null; // Return null for success
             }
         }
     }
@@ -362,13 +273,13 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String resolvedType = (String) args[3];
             IServiceConnection connection = (IServiceConnection) args[4];
 
-            
+            // Check for null intent
             if (intent == null) {
                 Slog.w(TAG, "BindServiceCommon: Intent is null, proceeding with original call");
                 return method.invoke(who, args);
             }
 
-            
+            //int flags = MethodParameterUtils.toInt(args[5]);
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
@@ -391,7 +302,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     }
                 }
 
-                
+                //Log.d(TAG,"Intent:" + intent + "-->" + "proxyIntent:" + proxyIntent + ",flag:" + intent.getFlags() + "proxyFlag:" + proxyIntent.getFlags());
                 if (proxyIntent != null && proxyIntent.getComponent() != null && 
                     proxyIntent.getComponent().getPackageName().equals(BlackBoxCore.getHostPkg())){
                     int flagsIndex = getFlagsIndex(args);
@@ -416,7 +327,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     }
 
     private static int getFlagsIndex(Object[] args) {
-        
+        // Heuristic: flags is the first Number after IServiceConnection position (index 4)
         for (int i = 5; i < args.length; i++) {
             Object arg = args[i];
             if (arg instanceof Integer || arg instanceof Long) {
@@ -439,7 +350,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // android 14 add
     @ProxyMethod("bindServiceInstance")
     public static class bindServiceInstance extends MethodHook {
         @Override
@@ -453,12 +364,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // 10.0
     @ProxyMethod("bindIsolatedService")
     public static class BindIsolatedService extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
+            // instanceName
             args[6] = null;
             return BindServiceCommon(who,method,args,7);
         }
@@ -549,11 +460,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     return i;
                 }
             }
-            if (BuildCompat.isR()) {
-                return 6;
-            } else {
-                return 5;
-            }
+            // Always return 6 on API 29+ (R+ index)
+            return 6;
         }
     }
 
@@ -600,7 +508,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 ProxyBroadcastRecord.saveStub(proxyIntent, intent, BActivityThread.getUserId());
                 args[intentIndex] = proxyIntent;
             }
-            
+            // ignore permission
             for (int i = 0; i < args.length; i++) {
                 Object o = args[i];
                 if (o instanceof String[]) {
@@ -661,7 +569,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // todo
     @ProxyMethod("sendIntentSender")
     public static class SendIntentSender extends MethodHook {
 
@@ -671,7 +579,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // android 11 add
     @ProxyMethod("registerReceiverWithFeature")
     public static class RegisterReceiverWithFeature extends MethodHook{
         @Override
@@ -689,7 +597,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
                 args[receiverIndex] = proxy;
             }
-            
+            // ignore permission
             if (args[getPermissionIndex()] != null) {
                 args[getPermissionIndex()] = null;
             }
@@ -706,22 +614,19 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             return method.invoke(who, args);
         }
 
+        // Indices for API 31+ (Android 12+)
+        // For API 29-30, these methods may return wrong indices but registerReceiverWithFeature
+        // was only added in API 30, so we use API 31+ indices
         public int getReceiverIndex() {
-            if (BuildCompat.isS()) {
-                return 4;
-            }
-            return 3;
+            return 4;
         }
 
         public int getPermissionIndex() {
-            if (BuildCompat.isS()) {
-                return 6;
-            }
-            return 5;
+            return 6;
         }
     }
 
-    
+    //maxTargetSdk=29
     @ProxyMethod("registerReceiver")
     public static class RegisterReceiver extends MethodHook {
 
@@ -741,7 +646,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 args[receiverIndex] = proxy;
             }
             int permissionIndex = 4;
-            
+            // ignore permission
             if (args[permissionIndex] != null) {
                 args[permissionIndex] = null;
             }
@@ -762,11 +667,11 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class setServiceForeground extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
-            
+            // Allow foreground service promotion to proceed, and neutralize service type enforcement on Android 14+
+            // Find an int argument that represents foregroundServiceType and zero it out
             for (int i = args.length - 1; i >= 0; i--) {
                 if (args[i] instanceof Integer) {
-                    args[i] = 0; 
+                    args[i] = 0; // remove service type requirements (e.g., MICROPHONE)
                     break;
                 }
             }
@@ -802,13 +707,13 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 return PackageManager.PERMISSION_GRANTED;
             }
             
-            
+            // Handle all audio-related permissions comprehensively
             if (isAudioPermission(permission)) {
                 Slog.d(TAG, "ActivityManager checkPermission: Granting audio permission: " + permission);
                 return PackageManager.PERMISSION_GRANTED;
             }
 
-            
+            // Handle storage/media read permissions so apps can query MediaStore
             if (isStorageOrMediaPermission(permission)) {
                 Slog.d(TAG, "ActivityManager checkPermission: Granting storage/media permission: " + permission);
                 return PackageManager.PERMISSION_GRANTED;
@@ -818,7 +723,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // Keep in sync with IPackageManagerProxy helper
     private static boolean isAudioPermission(String permission) {
         if (permission == null) return false;
         return permission.equals(Manifest.permission.RECORD_AUDIO)
@@ -844,7 +749,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // Keep in sync with IPackageManagerProxy helper
     private static boolean isStorageOrMediaPermission(String permission) {
         if (permission == null) return false;
         if (permission.equals(Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -869,7 +774,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         return false;
     }
 
-    
+    // for < Android 10
     @ProxyMethod("setTaskDescription")
     public static class SetTaskDescription extends MethodHook {
         @Override

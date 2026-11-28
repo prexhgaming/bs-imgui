@@ -5,13 +5,13 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.graphics.Color;
-import android.os.Build;
-
-import androidx.annotation.RequiresApi;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 
-
+/**
+ * Created by BlackBox on 2022/3/18.
+ * Note: Notification channels available since API 26, always available on minSdk 29.
+ */
 public class NotificationChannelManager {
     private final static NotificationChannelManager sManager = new NotificationChannelManager();
 
@@ -22,12 +22,9 @@ public class NotificationChannelManager {
     }
 
     public NotificationChannelManager() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            registerAppChannel();
-        }
+        registerAppChannel();
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.O)
     private void registerAppChannel() {
         NotificationManager nm = (NotificationManager) BlackBoxCore.getContext().getSystemService(Context.NOTIFICATION_SERVICE);
         String CHANNEL_ONE_ID = BlackBoxCore.getContext().getPackageName();

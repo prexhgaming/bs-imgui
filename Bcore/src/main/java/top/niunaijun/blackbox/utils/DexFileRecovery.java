@@ -23,24 +23,29 @@ import java.util.zip.ZipInputStream;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 
-
+/**
+ * Comprehensive DEX file recovery utility to handle "classes.dex: Entry not found" errors.
+ * This class provides multiple recovery strategies for corrupted or missing DEX files.
+ */
 public class DexFileRecovery {
     private static final String TAG = "DexFileRecovery";
     
-    
+    // Cache for recovery attempts to avoid repeated work
     private static final Map<String, RecoveryResult> sRecoveryCache = new HashMap<>();
     
-    
+    // Recovery strategies
     private static final List<RecoveryStrategy> sRecoveryStrategies = new ArrayList<>();
     
-    
+    // Maximum recovery attempts per file
     private static final int MAX_RECOVERY_ATTEMPTS = 3;
     
     static {
         initializeRecoveryStrategies();
     }
     
-    
+    /**
+     * Recovery result containing the recovered file path and method used
+     */
     public static class RecoveryResult {
         public final String recoveredFilePath;
         public final String recoveryMethod;
@@ -71,14 +76,18 @@ public class DexFileRecovery {
         }
     }
     
-    
+    /**
+     * Recovery strategy interface
+     */
     public interface RecoveryStrategy {
         String getName();
         RecoveryResult attemptRecovery(String corruptedFilePath);
-        int getPriority(); 
+        int getPriority(); // Higher priority strategies are tried first
     }
     
-    
+    /**
+     * Initialize all available recovery strategies
+     */
     private static void initializeRecoveryStrategies() {
         sRecoveryStrategies.add(new AlternativeApkStrategy());
         sRecoveryStrategies.add(new HostAppApkStrategy());
@@ -86,19 +95,21 @@ public class DexFileRecovery {
         sRecoveryStrategies.add(new DexExtractionStrategy());
         sRecoveryStrategies.add(new BackupRestoreStrategy());
         
-        
+        // Sort by priority (highest first)
         sRecoveryStrategies.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
         
         Slog.d(TAG, "Initialized " + sRecoveryStrategies.size() + " recovery strategies");
     }
     
-    
+    /**
+     * Attempt to recover a corrupted DEX file
+     */
     public static RecoveryResult recoverDexFile(String corruptedFilePath) {
         if (corruptedFilePath == null) {
             return new RecoveryResult("Corrupted file path is null");
         }
         
-        
+        // Check cache first
         if (sRecoveryCache.containsKey(corruptedFilePath)) {
             RecoveryResult cached = sRecoveryCache.get(corruptedFilePath);
             Slog.d(TAG, "Using cached recovery result for " + corruptedFilePath + ": " + cached);
@@ -107,7 +118,7 @@ public class DexFileRecovery {
         
         Slog.w(TAG, "Attempting to recover corrupted DEX file: " + corruptedFilePath);
         
-        
+        // Try each recovery strategy in order of priority
         for (RecoveryStrategy strategy : sRecoveryStrategies) {
             try {
                 Slog.d(TAG, "Trying recovery strategy: " + strategy.getName());
@@ -125,13 +136,15 @@ public class DexFileRecovery {
             }
         }
         
-        
+        // All strategies failed
         RecoveryResult failure = new RecoveryResult("All recovery strategies failed for " + corruptedFilePath);
         sRecoveryCache.put(corruptedFilePath, failure);
         return failure;
     }
     
-    
+    /**
+     * Strategy 1: Find alternative APK files in the same directory
+     */
     private static class AlternativeApkStrategy implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -140,7 +153,7 @@ public class DexFileRecovery {
         
         @Override
         public int getPriority() {
-            return 100; 
+            return 100; // Highest priority
         }
         
         @Override
@@ -154,10 +167,10 @@ public class DexFileRecovery {
                     if (files != null) {
                         for (File file : files) {
                             if (file.getName().endsWith(".apk") && 
-                                file.length() > 1000000 && 
+                                file.length() > 1000000 && // > 1MB
                                 !file.getAbsolutePath().equals(corruptedFilePath)) {
                                 
-                                
+                                // Validate this APK file
                                 if (isValidApkFile(file)) {
                                     Slog.d(TAG, "Found valid alternative APK: " + file.getAbsolutePath());
                                     return new RecoveryResult(file.getAbsolutePath(), getName());
@@ -174,7 +187,9 @@ public class DexFileRecovery {
         }
     }
     
-    
+    /**
+     * Strategy 2: Use host app's APK as fallback
+     */
     private static class HostAppApkStrategy implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -208,7 +223,9 @@ public class DexFileRecovery {
         }
     }
     
-    
+    /**
+     * Strategy 3: Use system APK files as fallback
+     */
     private static class SystemApkStrategy implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -223,7 +240,7 @@ public class DexFileRecovery {
         @Override
         public RecoveryResult attemptRecovery(String corruptedFilePath) {
             try {
-                
+                // Try to find system APK files
                 String[] systemPaths = {
                     "/system/app",
                     "/system/priv-app",
@@ -259,7 +276,9 @@ public class DexFileRecovery {
         }
     }
     
-    
+    /**
+     * Strategy 4: Extract DEX from corrupted APK if possible
+     */
     private static class DexExtractionStrategy implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -279,7 +298,7 @@ public class DexFileRecovery {
                     return new RecoveryResult("Not an APK file or file doesn't exist");
                 }
                 
-                
+                // Try to extract classes.dex from the corrupted APK
                 String extractedDexPath = extractDexFromApk(corruptedFile);
                 if (extractedDexPath != null) {
                     Slog.d(TAG, "Successfully extracted DEX from corrupted APK: " + extractedDexPath);
@@ -296,13 +315,13 @@ public class DexFileRecovery {
             try (ZipFile zipFile = new ZipFile(apkFile)) {
                 ZipEntry dexEntry = zipFile.getEntry("classes.dex");
                 if (dexEntry != null) {
-                    
+                    // Create extraction directory
                     File extractDir = new File(BlackBoxCore.getContext().getCacheDir(), "dex_recovery");
                     if (!extractDir.exists()) {
                         extractDir.mkdirs();
                     }
                     
-                    
+                    // Extract the DEX file
                     File extractedDex = new File(extractDir, "classes_" + System.currentTimeMillis() + ".dex");
                     try (InputStream input = zipFile.getInputStream(dexEntry);
                          FileOutputStream output = new FileOutputStream(extractedDex)) {
@@ -325,7 +344,9 @@ public class DexFileRecovery {
         }
     }
     
-    
+    /**
+     * Strategy 5: Restore from backup if available
+     */
     private static class BackupRestoreStrategy implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -334,13 +355,13 @@ public class DexFileRecovery {
         
         @Override
         public int getPriority() {
-            return 20; 
+            return 20; // Lowest priority
         }
         
         @Override
         public RecoveryResult attemptRecovery(String corruptedFilePath) {
             try {
-                
+                // Look for backup files
                 String backupPath = findBackupFile(corruptedFilePath);
                 if (backupPath != null && isValidApkFile(new File(backupPath))) {
                     Slog.d(TAG, "Found valid backup file: " + backupPath);
@@ -357,7 +378,7 @@ public class DexFileRecovery {
             try {
                 File original = new File(originalPath);
                 File parent = original.getParentFile();
-                String baseName = original.getName().replaceFirst("[.][^.]+$", ""); 
+                String baseName = original.getName().replaceFirst("[.][^.]+$", ""); // Remove extension
                 
                 if (parent != null && parent.exists()) {
                     File[] files = parent.listFiles((dir, name) -> 
@@ -366,7 +387,7 @@ public class DexFileRecovery {
                     );
                     
                     if (files != null && files.length > 0) {
-                        
+                        // Return the most recent backup
                         File mostRecent = files[0];
                         for (File file : files) {
                             if (file.lastModified() > mostRecent.lastModified()) {
@@ -384,19 +405,21 @@ public class DexFileRecovery {
         }
     }
     
-    
+    /**
+     * Validate if an APK file is valid and contains classes.dex
+     */
     public static boolean isValidApkFile(File apkFile) {
         if (apkFile == null || !apkFile.exists()) {
             return false;
         }
         
         try {
-            
+            // Check file size (APK should be at least 1MB)
             if (apkFile.length() < 1000000) {
                 return false;
             }
             
-            
+            // Check if it's a valid ZIP file containing classes.dex
             try (ZipFile zipFile = new ZipFile(apkFile)) {
                 ZipEntry dexEntry = zipFile.getEntry("classes.dex");
                 return dexEntry != null && dexEntry.getSize() > 0;
@@ -410,13 +433,17 @@ public class DexFileRecovery {
         }
     }
     
-    
+    /**
+     * Clear recovery cache
+     */
     public static void clearCache() {
         sRecoveryCache.clear();
         Slog.d(TAG, "Recovery cache cleared");
     }
     
-    
+    /**
+     * Get recovery statistics
+     */
     public static String getRecoveryStats() {
         int successful = 0;
         int failed = 0;
@@ -433,9 +460,11 @@ public class DexFileRecovery {
                ", Total Attempts: " + sRecoveryCache.size();
     }
     
-    
+    /**
+     * Force recovery attempt for a specific file
+     */
     public static RecoveryResult forceRecovery(String filePath) {
-        
+        // Clear cache for this file to force retry
         sRecoveryCache.remove(filePath);
         return recoverDexFile(filePath);
     }

@@ -7,7 +7,9 @@ import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
 
-
+/**
+ * LevelDB proxy to handle GMS LevelDB lock issues and database problems.
+ */
 public class LevelDbProxy extends ClassInvocationStub {
     public static final String TAG = "LevelDbProxy";
 
@@ -17,12 +19,12 @@ public class LevelDbProxy extends ClassInvocationStub {
 
     @Override
     protected Object getWho() {
-        return null; 
+        return null; // Not needed for class method hooks
     }
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
-        
+        // Hook LevelDB class methods directly
     }
 
     @Override
@@ -30,7 +32,7 @@ public class LevelDbProxy extends ClassInvocationStub {
         return false;
     }
 
-    
+    // Hook LevelDB open method to handle lock issues
     @ProxyMethod("open")
     public static class Open extends MethodHook {
         @Override
@@ -41,11 +43,11 @@ public class LevelDbProxy extends ClassInvocationStub {
                 String message = e.getMessage();
                 if (message != null && message.contains("lock") && message.contains("Try again")) {
                     Slog.w(TAG, "LevelDB lock error detected, returning null: " + message);
-                    
+                    // Return null to indicate database is unavailable
                     return null;
                 } else if (message != null && message.contains("IO error")) {
                     Slog.w(TAG, "LevelDB IO error detected, returning null: " + message);
-                    
+                    // Return null for IO errors
                     return null;
                 }
                 throw e;
@@ -53,7 +55,7 @@ public class LevelDbProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // Hook LevelDB nativeOpen method to handle native lock issues
     @ProxyMethod("nativeOpen")
     public static class NativeOpen extends MethodHook {
         @Override
@@ -64,7 +66,7 @@ public class LevelDbProxy extends ClassInvocationStub {
                 String message = e.getMessage();
                 if (message != null && (message.contains("lock") || message.contains("IO error"))) {
                     Slog.w(TAG, "LevelDB native lock/IO error detected, returning null: " + message);
-                    
+                    // Return null to indicate database is unavailable
                     return null;
                 }
                 throw e;
@@ -72,7 +74,7 @@ public class LevelDbProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // Hook LevelDB get method to handle null database
     @ProxyMethod("get")
     public static class Get extends MethodHook {
         @Override
@@ -90,7 +92,7 @@ public class LevelDbProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // Hook LevelDB put method to handle null database
     @ProxyMethod("put")
     public static class Put extends MethodHook {
         @Override
@@ -108,7 +110,7 @@ public class LevelDbProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // Hook LevelDB delete method to handle null database
     @ProxyMethod("delete")
     public static class Delete extends MethodHook {
         @Override

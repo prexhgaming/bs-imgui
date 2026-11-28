@@ -17,26 +17,29 @@
 - `app/src/main/jni/` — the native payload, an **ndk-build** project (`Android.mk` + `Application.mk`).
 - `Bcore/` — the **sandbox engine**, built from source as a single Gradle library module:
   - `top/niunaijun/blackbox/**` — the engine (public entry point `BlackBoxCore`). Native side is
-    `src/main/cpp`, an **ndk-build** project producing `libblackbox.so`; it links its own prebuilt
-    `libdobby.a`.
+    `src/main/cpp`, a **CMake** project producing `libblackbox.so`; it links no prebuilt `.a`.
   - `top/niunaijun/jnihook/**` — the JNI reflection hook.
   - `black/**` — the BlackReflection mirrors. The `BR*` classes are **generated** from these by the
-    `:compiler` annotation processor; never commit them.
+    BlackReflection annotation processor; never commit them.
   - `android/**` — platform stubs that deliberately shadow the real `android.jar` classes.
   - `src/main/aidl/**` — the engine's AIDL.
-- `black-reflection/` — BlackReflection runtime library (`:black-reflection`, plain `java-library`).
-- `compiler/` — the BlackReflection annotation processor (`:compiler`, compile-time only, never packaged).
+- **No `black-reflection/` and no `compiler/` module.** This engine takes BlackReflection from JitPack
+  (`com.github.CodingGay.BlackReflection:core:1.1.4` runtime + `:compiler:1.1.4` annotation processor).
 - `app/src/main/assets/a7f3c9.bin` — AES-256-GCM encrypted wallpaper (see "Encrypted assets").
 
 ### Which engine this is
-**NewBlackbox-AutoImport** (github.com/RaeesRizwan09/NewBlackbox-AutoImport), vendored from source and
-Apache-2.0. It replaced the earlier BlackBox Reborn vendor (github.com/fdavids77/BlackBoxReborn):
-same `top.niunaijun.blackbox` API and same three-module layout, but 23 changed engine files —
-notably native (`BoxCore.cpp`, `JniHook`, `hidden_api.cpp`), `ActivityStack`, `DaemonService`,
-`BPackageManagerService`, the `IActivityManager`/`IPackageManager`/`IAppOpsManager` proxies, and it
-**dropped** `utils/compat/PackageParserFix`. `black-reflection/` and `compiler/` are byte-identical
-between the two, so only `Bcore/` ever needs swapping. The swap is not half-reversible; the
-pre-first-swap state is tagged `pre-engine-swap` on `main`.
+**BCORE-KERO-FixedSDK** ("KERO" build, by dev `@L_Y_Y1`), vendored from source. It replaced the
+NewBlackbox-AutoImport vendor and, before that, BlackBox Reborn — all three keep the same
+`top.niunaijun.blackbox` API, so `app/` needs no changes when the engine is swapped.
+What differs in this one:
+- **native build is CMake** (`src/main/cpp/CMakeLists.txt`), not ndk-build, and it links **no**
+  prebuilt `libdobby.a` — the old engine's `src/main/cpp/Dobby/**` is gone with it.
+- **BlackReflection comes from JitPack**, so the in-tree `black-reflection/` and `compiler/` modules
+  were deleted (they provided the same `top.niunaijun.blackreflection` package — keeping both would
+  be duplicate classes on the classpath).
+- its own `build.gradle` used a legacy `dexOptions { }` block, removed in AGP 8.x and therefore not
+  carried over.
+The swap is not half-reversible; the pre-first-swap state is tagged `pre-engine-swap` on `main`.
 
 Why source and not an AAR: the original core was a prebuilt `mundo-release.aar` that shipped
 **64-bit only** and was gated on a remote licence server (`MetaActivationManager` → HTTP → native
@@ -68,22 +71,24 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
 `SimpleCrashFix` that fired it on every crash type. Nothing in the core may send data off-device.
 
 ## Building
-- **Two native builds, both ndk-build, both driven by Gradle:** `externalNativeBuild.ndkBuild` for the
-  payload and for the engine. **There is no CMake anywhere** — do not install or wire CMake back in.
+- **Two native builds, both driven by Gradle:** **ndk-build** for the payload
+  (`app/src/main/jni/Android.mk`) and **CMake** for the engine
+  (`Bcore/src/main/cpp/CMakeLists.txt`). CMake is required again — CI installs `cmake;3.22.1`
+  (CMake 3.31+ rejects the engine's `cmake_minimum_required(3.4.1)`).
 - **One command builds everything:** `gradle assembleRelease` (CI builds release only — see
   "Minify, shrink and keep rules" for why release and not debug).
 - **No flat jar.** `:Bcore` is consumed as a normal Gradle library module; there is no `bcoreJar`
   task and nothing is prebuilt into `libs/`. See "No flat jar" below for why.
 - Toolchain (keep `app`, `Bcore` and CI in sync): **AGP 8.13.2**, Gradle **8.14.5** (CI's
-  `GRADLE_VERSION`), `compileSdk 36`, `buildToolsVersion 36.1.0`, **Java 21** (JDK 21 in CI —
-  `Bcore` compiles at 21), `minSdk 24`, `targetSdk 28`. `compileSdk` must stay 36: the engine's AAR
-  metadata pins `minCompileSdk 36`, so a lower value is a hard failure, not a warning.
-- **Two NDKs**, both installed by CI: `NDK_VERSION 27.0.12077973` for the payload (`app`), and
-  `ENGINE_NDK_VERSION 29.0.13846066` because `Bcore/build.gradle` pins `ndkVersion = 29…` itself.
+  `GRADLE_VERSION`), `compileSdk 36`, `buildToolsVersion 36.1.0`, **Java 21** for `app`
+  (JDK 21 in CI) while `Bcore` compiles at **Java 11** (its upstream setting), `minSdk 24`,
+  `targetSdk 28`.
+- **Two NDKs**, both installed by CI and both from `rootProject.ext`: `ndkVersion`
+  (`27.0.12077973`) for the payload, and `engineNdkVersion` (`24.0.8215888`) because the engine is
+  pinned to the NDK it was written against.
 - No `gradlew` in the repo — the wrapper jar isn't committed. CI gets `gradle` from
   `gradle/actions/setup-gradle@v3`; run `gradle wrapper` locally if you want one.
-- `ndkVersion` must match CI's `NDK_VERSION` (`27.0.12077973`). `Bcore/build.gradle` and the app pin it.
-- NDK **r26+** required (`Application.mk` sets `APP_SUPPORT_FLEXIBLE_PAGE_SIZES`).
+- NDK **r26+** required for the payload (`Application.mk` sets `APP_SUPPORT_FLEXIBLE_PAGE_SIZES`).
 - ABI split: the **payload** is `armeabi-v7a` only (32-bit game target); the **engine** builds
   `arm64-v8a` + `armeabi-v7a`. The app's `abiFilters` decides what is packaged, so the APK carries
   `armeabi-v7a` libs only.
@@ -205,8 +210,9 @@ in `BlackBoxCore`, the `getLogSenderChatId()` config hook, and the six call site
 - Verify the shipped asset against the runtime key with `.polydev/verify_asset.py`.
 
 ## CI: .github/workflows/android-build.yml
-- Decodes signing material → installs NDK **27.0.12077973** and SDK platform/build-tools **36** (no
-  CMake) → `gradle assembleRelease` piped through `tee` to `build.log`.
+- Decodes signing material → installs both NDKs (**27.0.12077973** payload, **24.0.8215888** engine),
+  **CMake 3.22.1** and SDK platform/build-tools **36** → `gradle assembleRelease` piped through `tee`
+  to `build.log`.
 - Ships the **release** APK (`dist/bskiller-<versionName>-<run_number>.apk`), signed with our key. On
   fork PRs (no secrets) the release APK is unsigned; the cert assertions are then skipped with a
   warning instead of failing the build.

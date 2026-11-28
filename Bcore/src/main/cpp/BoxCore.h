@@ -1,11 +1,18 @@
-
-
-
+//
+// Created by Milk on 4/9/21.
+//
 
 #ifndef VIRTUALM_VMCORE_H
 #define VIRTUALM_VMCORE_H
 
 #include <jni.h>
+#include <sys/syscall.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <sys/signal.h>
+#include <sys/unistd.h>
+#include <linux/prctl.h>
+#include <sys/prctl.h>
 
 #define VMCORE_CLASS "top/niunaijun/blackbox/core/NativeCore"
 
@@ -20,4 +27,4 @@ public:
 };
 
 
-#endif 
+#endif //VIRTUALM_VMCORE_H

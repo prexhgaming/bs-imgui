@@ -1,8 +1,9 @@
 name: Android Build
 
 # Builds and signs the loader APK with Gradle. Gradle drives both native builds
-# itself (ndk-build for app/src/main/jni and for the :Bcore engine), so the
-# native libs are compiled as part of the normal app build. No CMake involved.
+# itself: ndk-build for the payload (app/src/main/jni) and CMake for the :Bcore
+# engine (Bcore/src/main/cpp), so the native libs are compiled as part of the
+# normal app build.
 #
 # Only `assembleRelease` is built. AGP force-disables R8 obfuscation AND
 # optimisation for any `debuggable` build type, so a release build is the only
@@ -21,8 +22,6 @@ on:
     paths:
       - 'app/**'
       - 'Bcore/**'
-      - 'black-reflection/**'
-      - 'compiler/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -31,8 +30,6 @@ on:
     paths:
       - 'app/**'
       - 'Bcore/**'
-      - 'black-reflection/**'
-      - 'compiler/**'
       - 'build.gradle'
       - 'settings.gradle'
       - 'gradle.properties'
@@ -47,13 +44,16 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Must match ndkVersion in app/build.gradle.
+  # Payload NDK — must match rootProject.ext.ndkVersion.
   # r26+ is required: Application.mk sets APP_SUPPORT_FLEXIBLE_PAGE_SIZES.
   NDK_VERSION: 27.0.12077973
-  # Bcore pins its own NDK in Bcore/build.gradle (upstream's choice); both must
-  # be installed. The payload deliberately keeps the NDK it was proven with.
-  ENGINE_NDK_VERSION: 29.0.13846066
-  # Must match the AGP 8.13.2 / compileSdk 36 toolchain the core expects.
+  # The engine (:Bcore) is pinned to the NDK it was written against
+  # (rootProject.ext.engineNdkVersion). Both must be installed.
+  ENGINE_NDK_VERSION: 24.0.8215888
+  # The engine's native build is CMake; 3.22.1 still accepts its
+  # cmake_minimum_required(3.4.1). CMake 3.31+ would reject that.
+  CMAKE_VERSION: 3.22.1
+  # Must match the AGP 8.13.2 / compileSdk 36 toolchain.
   GRADLE_VERSION: '8.14.5'
   LOG_FILE: build.log
 
@@ -119,14 +119,17 @@ jobs:
             SDKMANAGER="$(command -v sdkmanager)"
           fi
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          # No CMake any more: the payload and the core engine are both
-          # ndk-build projects now. compileSdk 36 needs platform + build-tools 36.
+          # The payload is ndk-build, the engine is CMake (needs an explicit
+          # cmake install), and both NDKs are pinned per module.
           "$SDKMANAGER" --install \
             "ndk;${NDK_VERSION}" \
             "ndk;${ENGINE_NDK_VERSION}" \
+            "cmake;${CMAKE_VERSION}" \
             "platforms;android-36" \
             "build-tools;36.1.0"
-          echo "NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${NDK_VERSION}"
+          echo "payload NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${NDK_VERSION}"
+          echo "engine  NDK at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/${ENGINE_NDK_VERSION}"
+          echo "cmake       at: ${ANDROID_SDK_ROOT:-$ANDROID_HOME}/cmake/${CMAKE_VERSION}"
 
       # `tee` keeps the full output on disk for the Telegram upload while it
       # still streams live to the Actions log. pipefail is what makes the step

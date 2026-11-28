@@ -6,7 +6,14 @@ import java.util.List;
 import dalvik.system.DexFile;
 import top.niunaijun.blackbox.utils.Reflector;
 
-
+/**
+ * updated by alex5402 on 2021/5/16.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class DexFileCompat {
 
     public static List<Long> getCookies(ClassLoader classLoader) {
@@ -26,12 +33,9 @@ public class DexFileCompat {
             Object object = Reflector.with(dexFile)
                     .field("mCookie")
                     .get();
-            if (BuildCompat.isM()) {
-                for (long l : (long[]) object) {
-                    cookies.add(l);
-                }
-            } else {
-                cookies.add((long) object);
+            // Always use M+ API on API 29+ (mCookie is long[] array)
+            for (long l : (long[]) object) {
+                cookies.add(l);
             }
         } catch (Exception e) {
             e.printStackTrace();

@@ -14,7 +14,9 @@ import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.hook.ScanClass;
 import top.niunaijun.blackbox.utils.compat.TaskDescriptionCompat;
 
-
+/**
+ * Created by BlackBox on 2022/2/22.
+ */
 @ScanClass(ActivityManagerCommonProxy.class)
 public class IActivityClientProxy extends ClassInvocationStub {
     public static final String TAG = "IActivityClientProxy";
@@ -86,7 +88,7 @@ public class IActivityClientProxy extends ClassInvocationStub {
         }
     }
 
-    
+    // for >= Android 12
     @ProxyMethod("setTaskDescription")
     public static class SetTaskDescription extends MethodHook {
         @Override

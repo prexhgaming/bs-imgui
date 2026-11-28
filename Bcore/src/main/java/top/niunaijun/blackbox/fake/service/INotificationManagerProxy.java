@@ -4,9 +4,6 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationChannelGroup;
 import android.content.Context;
-import android.os.Build;
-
-import androidx.annotation.RequiresApi;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -19,10 +16,16 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
-import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 
-
+/**
+ * updated by alex5402 on 4/2/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class INotificationManagerProxy extends BinderInvocationStub {
     public static final String TAG = "INotificationManagerProxy";
 
@@ -43,7 +46,7 @@ public class INotificationManagerProxy extends BinderInvocationStub {
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-
+//        Slog.d(TAG, "call: " + method.getName());
         MethodParameterUtils.replaceAllAppPkg(args);
         return super.invoke(proxy, method, args);
     }
@@ -84,11 +87,9 @@ public class INotificationManagerProxy extends BinderInvocationStub {
             return 0;
         }
 
+        // Always return 2 on API 29+ (R+ index)
         public int getTagIndex() {
-            if (BuildCompat.isR()) {
-                return 2;
-            }
-            return 1;
+            return 2;
         }
 
         public int getIdIndex() {
@@ -119,7 +120,6 @@ public class INotificationManagerProxy extends BinderInvocationStub {
     }
 
     @ProxyMethod("createNotificationChannels")
-    @RequiresApi(api = Build.VERSION_CODES.O)
     public static class CreateNotificationChannels extends MethodHook {
 
         @Override
@@ -145,7 +145,6 @@ public class INotificationManagerProxy extends BinderInvocationStub {
     }
 
     @ProxyMethod("createNotificationChannelGroups")
-    @RequiresApi(api = Build.VERSION_CODES.O)
     public static class CreateNotificationChannelGroups extends MethodHook {
 
         @Override

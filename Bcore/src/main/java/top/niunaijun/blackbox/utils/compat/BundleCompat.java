@@ -1,27 +1,20 @@
 package top.niunaijun.blackbox.utils.compat;
 
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 
-import black.android.os.BRBundle;
-
+/**
+ * Bundle compatibility utilities.
+ * Simplified for Android 10+ (API 29+) - native methods always available.
+ */
 public class BundleCompat {
     public static IBinder getBinder(Bundle bundle, String key) {
-        if (Build.VERSION.SDK_INT >= 18) {
-            return bundle.getBinder(key);
-        } else {
-            return BRBundle.get(bundle).getIBinder(key);
-        }
+        return bundle.getBinder(key);
     }
 
     public static void putBinder(Bundle bundle, String key, IBinder value) {
-        if (Build.VERSION.SDK_INT >= 18) {
-            bundle.putBinder(key, value);
-        } else {
-            BRBundle.get(bundle).putIBinder(key, value);
-        }
+        bundle.putBinder(key, value);
     }
 
     public static void putBinder(Intent intent, String key, IBinder value) {
@@ -37,24 +30,4 @@ public class BundleCompat {
         }
         return null;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }

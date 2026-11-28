@@ -20,7 +20,14 @@ import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Md5Utils;
 
-
+/**
+ * updated by alex5402 on 4/2/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class ITelephonyManagerProxy extends BinderInvocationStub {
     public static final String TAG = "ITelephonyManagerProxy";
 
@@ -38,6 +45,55 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
     protected void inject(Object baseInvocation, Object proxyInvocation) {
         replaceSystemService(Context.TELEPHONY_SERVICE);
     }
+    @ProxyMethod("listen")
+    public static class Listen extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable e) {
+                Log.e(TAG, "listen: SecurityException bypassed");
+                return null; // منع الكراش عبر إرجاع لا شيء
+            }
+        }
+    }
+    @ProxyMethod("listenWithEventList")
+    public static class ListenWithEventList extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                // هذا هو السطر الذي يسبب الكراش في اللوج الخاص بك
+                return method.invoke(who, args);
+            } catch (Throwable e) {
+                Log.e(TAG, "listenWithEventList: SecurityException bypassed");
+                return null;
+            }
+        }
+    }
+
+    @ProxyMethod("checkCarrierPrivilegesForPackage")
+    public static class CheckCarrierPrivilegesForPackage extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            // نخبر الفيسبوك أن لديه امتيازات الحامل (Carrier Privileges) كذباً لمنع الاعتراض
+            return 1; // 1 تعني TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS
+        }
+    }
+
+    @ProxyMethod("getServiceStateForSubscriber")
+    public static class GetServiceStateForSubscriber extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable e) {
+                return null; // منع الانهيار إذا فشل جلب حالة الخدمة
+            }
+        }
+    }
+
+
+
 
     @Override
     public boolean isBadEnv() {
@@ -48,8 +104,8 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
     public static class GetDeviceId extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-
-
+//                MethodParameterUtils.replaceFirstAppPkg(args);
+//                return method.invoke(who, args);
             return Md5Utils.md5(BlackBoxCore.getHostPkg());
         }
     }
@@ -58,8 +114,8 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
     public static class getImeiForSlot extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-
-
+//                MethodParameterUtils.replaceFirstAppPkg(args);
+//                return method.invoke(who, args);
             return Md5Utils.md5(BlackBoxCore.getHostPkg());
         }
     }
@@ -68,8 +124,8 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
     public static class GetMeidForSlot extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-
-
+//                MethodParameterUtils.replaceFirstAppPkg(args);
+//                return method.invoke(who, args);
             return Md5Utils.md5(BlackBoxCore.getHostPkg());
         }
     }
@@ -115,7 +171,7 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
             if (BLocationManager.isFakeLocationEnable()) {
                 BCell cell = BLocationManager.get().getCell(BActivityThread.getUserId(), BActivityThread.getAppPackageName());
                 if (cell != null) {
-                    
+                    // TODO Transfer BCell to CdmaCellLocation/GsmCellLocation
                     return null;
                 }
             }
@@ -129,7 +185,7 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
                 List<BCell> cell = BLocationManager.get().getAllCell(BActivityThread.getUserId(), BActivityThread.getAppPackageName());
-                
+                // TODO Transfer BCell to CdmaCellLocation/GsmCellLocation
                 return cell;
             }
             try {
@@ -168,7 +224,7 @@ public class ITelephonyManagerProxy extends BinderInvocationStub {
             Log.d(TAG, "getNeighboringCellInfo");
             if (BLocationManager.isFakeLocationEnable()) {
                 List<BCell> cell = BLocationManager.get().getNeighboringCell(BActivityThread.getUserId(), BActivityThread.getAppPackageName());
-                
+                // TODO Transfer BCell to CdmaCellLocation/GsmCellLocation
                 return null;
             }
             return method.invoke(who, args);

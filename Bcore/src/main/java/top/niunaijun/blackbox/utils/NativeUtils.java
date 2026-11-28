@@ -15,7 +15,14 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 
-
+/**
+ * updated by alex5402 on 2/24/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class NativeUtils {
     public static final String TAG = "VirtualM";
 
@@ -25,11 +32,8 @@ public class NativeUtils {
             nativeLibDir.mkdirs();
         }
         try (ZipFile zipfile = new ZipFile(apk.getAbsolutePath())) {
-            if (findAndCopyNativeLib(zipfile, Build.CPU_ABI, nativeLibDir)) {
-                return;
-            }
-
-            findAndCopyNativeLib(zipfile, "armeabi", nativeLibDir);
+            // ARM64-only: only try the primary ABI (arm64-v8a on API 29+)
+            findAndCopyNativeLib(zipfile, Build.CPU_ABI, nativeLibDir);
         } finally {
             Log.d(TAG, "Done! +" + (System.currentTimeMillis() - startTime) + "ms");
         }
@@ -64,10 +68,10 @@ public class NativeUtils {
 
             String libName = entryName.substring(entryName.lastIndexOf('/') + 1);
             Log.d(TAG, "verify so " + libName);
-
-
-
-
+//            File abiDir = new File(nativeLibDir, cpuArch);
+//            if (!abiDir.exists()) {
+//                abiDir.mkdirs();
+//            }
 
             File libFile = new File(nativeLibDir, libName);
             if (libFile.exists() && libFile.length() == entry.getSize()) {

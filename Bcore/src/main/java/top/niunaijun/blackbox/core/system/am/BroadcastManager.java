@@ -21,7 +21,9 @@ import top.niunaijun.blackbox.entity.am.PendingResultData;
 import top.niunaijun.blackbox.proxy.ProxyBroadcastReceiver;
 import top.niunaijun.blackbox.utils.Slog;
 
-
+/**
+ * Created by BlackBox on 2022/2/28.
+ */
 public class BroadcastManager implements PackageMonitor {
     public static final String TAG = "BroadcastManager";
 
@@ -85,11 +87,8 @@ public class BroadcastManager implements PackageMonitor {
                 List<BPackage.ActivityIntentInfo> intents = receiver.intents;
                 for (BPackage.ActivityIntentInfo intent : intents) {
                     ProxyBroadcastReceiver proxyBroadcastReceiver = new ProxyBroadcastReceiver();
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        BlackBoxCore.getContext().registerReceiver(proxyBroadcastReceiver, intent.intentFilter, Context.RECEIVER_EXPORTED);
-                    }else{
-                        BlackBoxCore.getContext().registerReceiver(proxyBroadcastReceiver, intent.intentFilter);
-                    }
+                    // Android 10+ always uses RECEIVER_EXPORTED flag
+                    BlackBoxCore.getContext().registerReceiver(proxyBroadcastReceiver, intent.intentFilter, Context.RECEIVER_EXPORTED);
                     addReceiver(bPackage.packageName, proxyBroadcastReceiver);
                 }
             }
@@ -107,7 +106,7 @@ public class BroadcastManager implements PackageMonitor {
 
     public void sendBroadcast(PendingResultData pendingResultData) {
         synchronized (mReceiversData) {
-            
+            // Slog.d(TAG, "sendBroadcast: " + pendingResultData);
             mReceiversData.put(pendingResultData.mBToken, pendingResultData);
             Message obtain = Message.obtain(mHandler, MSG_TIME_OUT, pendingResultData);
             mHandler.sendMessageDelayed(obtain, TIMEOUT);
@@ -116,7 +115,7 @@ public class BroadcastManager implements PackageMonitor {
 
     public void finishBroadcast(PendingResultData data) {
         synchronized (mReceiversData) {
-            
+            // Slog.d(TAG, "finishBroadcast: " + data);
             mHandler.removeMessages(MSG_TIME_OUT, mReceiversData.get(data.mBToken));
         }
     }

@@ -11,23 +11,21 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Still needed: the core depends on com.github.tiann:FreeReflection,
-        // which is only published to JitPack.
+        // Needed by the engine: FreeReflection, toml4j and BlackReflection
+        // (core + annotation processor) are all published to JitPack.
         maven { url 'https://jitpack.io' }
     }
 }
 
 include ':app'
 
-// The sandbox core (BlackBox Reborn, Apache-2.0), built from source.
+// The sandbox engine ("KERO" build), built from source.
 // One library module holding every package root: top/niunaijun/**, black/**, android/**.
 include ':Bcore'
 
-// BlackReflection, in-tree instead of the old JitPack artifacts.
-// ':black-reflection' is the runtime mirror library (needed in the APK);
-// ':compiler' is the annotation processor that generates the BR* classes
-// (compile-time only, never packaged).
-include ':black-reflection'
-include ':compiler'
+// There is no in-tree BlackReflection any more: this engine takes
+// com.github.CodingGay.BlackReflection:core:1.1.4 (runtime) and
+// :compiler:1.1.4 (annotation processor) from JitPack, so the former
+// ':black-reflection' and ':compiler' modules are gone.
 
 rootProject.name = 'BSKillerLoader'

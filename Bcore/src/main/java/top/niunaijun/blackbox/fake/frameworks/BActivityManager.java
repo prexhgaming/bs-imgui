@@ -19,7 +19,14 @@ import top.niunaijun.blackbox.entity.am.RunningAppProcessInfo;
 import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
 import top.niunaijun.blackbox.utils.Slog;
 
-
+/**
+ * updated by alex5402 on 4/14/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class BActivityManager extends BlackManager<IBActivityManagerService> {
     private static final String TAG = "BActivityManager";
     private static final BActivityManager sActivityManager = new BActivityManager();
@@ -93,12 +100,12 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
                 IBActivityManagerService service = getService();
                 if (service != null) {
                     service.startActivity(intent, userId);
-                    return; 
+                    return; // Success, exit
                 } else {
                     Slog.w(TAG, "ActivityManager service is null, retry " + (retryCount + 1) + "/" + maxRetries);
-                    
+                    // Wait a bit longer for service to become available
                     try {
-                        Thread.sleep(200 * (retryCount + 1)); 
+                        Thread.sleep(200 * (retryCount + 1)); // Progressive delay
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
@@ -106,16 +113,16 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
                 }
             } catch (DeadObjectException e) {
                 Slog.w(TAG, "ActivityManager service died, clearing cache and retrying " + (retryCount + 1) + "/" + maxRetries);
-                clearServiceCache(); 
+                clearServiceCache(); // Clear the dead service
                 try {
-                    Thread.sleep(100); 
+                    Thread.sleep(100); // Brief pause before retry
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     break;
                 }
             } catch (RemoteException e) {
                 Slog.e(TAG, "RemoteException in startActivity", e);
-                break; 
+                break; // Don't retry for other RemoteExceptions
             } catch (Exception e) {
                 Slog.e(TAG, "Unexpected error in startActivity", e);
                 break;

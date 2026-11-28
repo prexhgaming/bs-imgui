@@ -11,7 +11,10 @@ import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-
+/**
+ * Proxy for MIUI SecurityManager to handle privacy and security operations
+ * Fixes SecurityException: uid does not have android.permission.WRITE_SECURE_SETTINGS
+ */
 public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
     public static final String TAG = "MiuiSecurityManagerProxy";
     private static final String SERVICE_NAME = "miui.security.SecurityManager";
@@ -27,7 +30,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
             return null;
         }
         try {
-            
+            // Get ISecurityManager interface
             Class<?> stubClass = Class.forName("miui.security.ISecurityManager$Stub");
             Method asInterface = stubClass.getMethod("asInterface", android.os.IBinder.class);
             return asInterface.invoke(null, service);
@@ -48,7 +51,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
     }
 
     public boolean isEnable() {
-        
+        // Only enable on MIUI/Xiaomi systems
         return BuildCompat.isMIUI() || 
                Build.MANUFACTURER.toLowerCase().contains("xiaomi") ||
                Build.BRAND.toLowerCase().contains("xiaomi") ||
@@ -86,10 +89,10 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
     public static class SetAppPrivacyStatus extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
+            // Bypass privacy status setting - always return success
             String packageName = args.length > 0 ? (String) args[0] : "unknown";
             Slog.d(TAG, "SetAppPrivacyStatus: Bypassing privacy status for " + packageName);
-            return true; 
+            return true; // Return success
         }
     }
 
@@ -97,10 +100,10 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
     public static class GetAppPrivacyStatus extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
+            // Return default privacy status (enabled/allowed)
             String packageName = args.length > 0 ? (String) args[0] : "unknown";
             Slog.d(TAG, "GetAppPrivacyStatus: Returning default status for " + packageName);
-            return 0; 
+            return 0; // Return allowed status
         }
     }
 
@@ -118,7 +121,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "IsAppPermissionControlOpen: Returning false (disabled)");
-            return false; 
+            return false; // Disable permission control
         }
     }
 
@@ -136,7 +139,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "GetWakeUpTime: Returning default wake up time");
-            return 0L; 
+            return 0L; // Return default time
         }
     }
 
@@ -190,7 +193,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "IsAllowStartActivity: Allowing activity start");
-            return true; 
+            return true; // Always allow activity starts
         }
     }
 
@@ -208,7 +211,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "GetAppRunningControlEnabled: Returning false (disabled)");
-            return false; 
+            return false; // Disable running control
         }
     }
 
@@ -217,7 +220,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "CheckAccessControl: Allowing access");
-            return true; 
+            return true; // Always allow access
         }
     }
 
@@ -235,7 +238,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "GetIcon: Returning null icon");
-            return null; 
+            return null; // Return null icon
         }
     }
 
@@ -244,7 +247,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "IsValidDevice: Returning true (valid device)");
-            return true; 
+            return true; // Always return valid device
         }
     }
 
@@ -253,7 +256,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "ActuallyCheckPermission: Granting permission");
-            return 0; 
+            return 0; // Return granted
         }
     }
 
@@ -262,7 +265,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "CheckSmsBlocked: Returning false (not blocked)");
-            return false; 
+            return false; // SMS not blocked
         }
     }
 
@@ -280,7 +283,7 @@ public class IMiuiSecurityManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "GetCurrentUserId: Returning current user ID");
-            return 0; 
+            return 0; // Return user 0
         }
     }
 }

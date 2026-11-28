@@ -1,7 +1,7 @@
-
-
-
-
+//
+// Created by Milk on 4/9/21.
+//
+#include "oxorany.h"
 #include "BoxCore.h"
 #include "Log.h"
 #include "IO.h"
@@ -9,12 +9,11 @@
 #include <JniHook/JniHook.h>
 #include <Hook/VMClassLoaderHook.h>
 #include <Hook/UnixFileSystemHook.h>
-#include <Hook/FileSystemHook.h>
 #include <Hook/BinderHook.h>
 #include <Hook/DexFileHook.h>
 #include <Hook/RuntimeHook.h>
-#include "Utils/HexDump.h"
-#include "hidden_api.h"
+#include "SandHook/obfuscate.h"
+#include "Utils/SeccompUtils.h"
 
 struct {
     JavaVM *vm;
@@ -73,11 +72,8 @@ JavaVM *BoxCore::getJavaVM() {
 void nativeHook(JNIEnv *env) {
     BaseHook::init(env);
     UnixFileSystemHook::init(env);
-    FileSystemHook::init();
     VMClassLoaderHook::init(env);
-
     BinderHook::init(env);
-    DexFileHook::init(env);
 }
 
 void hideXposed(JNIEnv *env, jclass clazz) {
@@ -90,21 +86,14 @@ void init(JNIEnv *env, jobject clazz, jint api_level) {
     VMEnv.api_level = api_level;
     VMEnv.NativeCoreClass = (jclass) env->NewGlobalRef(env->FindClass(VMCORE_CLASS));
     VMEnv.getCallingUidId = env->GetStaticMethodID(VMEnv.NativeCoreClass, "getCallingUid", "(I)I");
-    VMEnv.redirectPathString = env->GetStaticMethodID(VMEnv.NativeCoreClass, "redirectPath",
-                                                      "(Ljava/lang/String;)Ljava/lang/String;");
-    VMEnv.redirectPathFile = env->GetStaticMethodID(VMEnv.NativeCoreClass, "redirectPath",
-                                                    "(Ljava/io/File;)Ljava/io/File;");
-    VMEnv.loadEmptyDex = env->GetStaticMethodID(VMEnv.NativeCoreClass, "loadEmptyDex",
-                                                "()[J");
-
+    VMEnv.redirectPathString = env->GetStaticMethodID(VMEnv.NativeCoreClass, "redirectPath","(Ljava/lang/String;)Ljava/lang/String;");
+    VMEnv.redirectPathFile = env->GetStaticMethodID(VMEnv.NativeCoreClass, "redirectPath","(Ljava/io/File;)Ljava/io/File;");
     JniHook::InitJniHook(env, api_level);
 }
 
-void addIORule(JNIEnv *env, jclass clazz, jstring target_path,
-               jstring relocate_path) {
+void addIORule(JNIEnv *env, jclass clazz, jstring target_path,jstring relocate_path) {
     ALOGD("set addIORule");
-    IO::addRule(env->GetStringUTFChars(target_path, JNI_FALSE),
-                env->GetStringUTFChars(relocate_path, JNI_FALSE));
+    IO::addRule(env->GetStringUTFChars(target_path, JNI_FALSE),env->GetStringUTFChars(relocate_path, JNI_FALSE));
 }
 
 void enableIO(JNIEnv *env, jclass clazz) {
@@ -113,35 +102,14 @@ void enableIO(JNIEnv *env, jclass clazz) {
     nativeHook(env);
 }
 
-bool disableHiddenApi(JNIEnv *env, jclass clazz) {
-    ALOGD("set disableHiddenApi");
-    if(!disable_hidden_api(env)){
-        ALOGD("set disableHiddenApi Fail!!!");
-        return false;
-    }
-    return true;
-}
-
-bool disableResourceLoading(JNIEnv *env, jclass clazz) {
-    ALOGD("set disableResourceLoading");
-    if(!disable_resource_loading()){
-        ALOGD("set disableResourceLoading Fail!!!");
-        return false;
-    }
-    return true;
-}
-
 static JNINativeMethod gMethods[] = {
-        {"disableHiddenApi", "()Z",                               (void *) disableHiddenApi},
-        {"disableResourceLoading", "()Z",                         (void *) disableResourceLoading},
-        {"hideXposed", "()V",                                     (void *) hideXposed},
+        {"hideXposed", "()V",      (void *) hideXposed},
         {"addIORule",  "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
-        {"enableIO",   "()V",                                     (void *) enableIO},
-        {"init",       "(I)V",                                    (void *) init},
+        {"enableIO",   "()V",(void *) enableIO},
+        {"init",       "(I)V",(void *) init},
 };
 
-int registerNativeMethods(JNIEnv *env, const char *className,
-                          JNINativeMethod *gMethods, int numMethods) {
+int registerNativeMethods(JNIEnv *env, const char *className,JNINativeMethod *gMethods, int numMethods) {
     jclass clazz;
     clazz = env->FindClass(className);
     if (clazz == nullptr) {
@@ -154,8 +122,7 @@ int registerNativeMethods(JNIEnv *env, const char *className,
 }
 
 int registerNatives(JNIEnv *env) {
-    if (!registerNativeMethods(env, VMCORE_CLASS, gMethods,
-                               sizeof(gMethods) / sizeof(gMethods[0])))
+    if (!registerNativeMethods(env, VMCORE_CLASS, gMethods,sizeof(gMethods) / sizeof(gMethods[0])))
         return JNI_FALSE;
     return JNI_TRUE;
 }

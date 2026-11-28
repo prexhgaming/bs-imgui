@@ -20,8 +20,7 @@ import android.os.Build;
 import java.util.HashSet;
 import java.util.Set;
 
-import black.android.content.pm.BRApplicationInfoL;
-import black.android.content.pm.BRApplicationInfoN;
+import black.android.content.pm.BRApplicationInfo;
 import black.android.content.pm.BRPackageParserSigningDetails;
 import black.android.content.pm.BRSigningInfo;
 import black.android.content.res.BRAssetManager;
@@ -33,7 +32,14 @@ import top.niunaijun.blackbox.utils.ArrayUtils;
 import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-
+/**
+ * updated by alex5402 on 4/15/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 @SuppressLint({"SdCardPath", "NewApi"})
 public class PackageManagerCompat {
 
@@ -123,7 +129,7 @@ public class PackageManagerCompat {
                 final ServiceInfo[] res = new ServiceInfo[N];
                 for (int i = 0; i < N; i++) {
                     final BPackage.Service s = p.services.get(i);
-                    
+                    //res[num++] = generateServiceInfo(s, flags, state, userId);
                     ServiceInfo serviceInfo = generateServiceInfo(s, flags, state, userId);
                     if(serviceInfo == null) continue;
                     if ((flags & PackageManager.GET_META_DATA) != 0) {
@@ -181,11 +187,11 @@ public class PackageManagerCompat {
                 for (int i = 0; i < N; i++) {
                     final String perm = p.requestedPermissions.get(i);
                     pi.requestedPermissions[i] = perm;
-                    
-
-
-
-
+                    // The notion of required permissions is deprecated but for compatibility.
+//                    pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_REQUIRED;
+//                    if (grantedPermissions != null && grantedPermissions.contains(perm)) {
+//                        pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_GRANTED;
+//                    }
                 }
             }
         }
@@ -201,15 +207,14 @@ public class PackageManagerCompat {
                 pi.signatures = base.signatures;
             }
         }
-        if (BuildCompat.isPie()) {
-            if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0) {
-                if (base == null) {
-                    PackageParser.SigningDetails signingDetails = PackageParser.SigningDetails.UNKNOWN;
-                    BRPackageParserSigningDetails.get(signingDetails)._set_signatures(p.mSigningDetails.signatures);
-                    pi.signingInfo = BRSigningInfo.get()._new(signingDetails);
-                } else {
-                    pi.signingInfo = base.signingInfo;
-                }
+        // Always use Pie+ signing certificates API on API 29+
+        if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0) {
+            if (base == null) {
+                PackageParser.SigningDetails signingDetails = PackageParser.SigningDetails.UNKNOWN;
+                BRPackageParserSigningDetails.get(signingDetails)._set_signatures(p.mSigningDetails.signatures);
+                pi.signingInfo = BRSigningInfo.get()._new(signingDetails);
+            } else {
+                pi.signingInfo = base.signingInfo;
             }
         }
         return pi;
@@ -219,7 +224,7 @@ public class PackageManagerCompat {
         if (!checkUseInstalledOrHidden(flags, state, a.info.applicationInfo)) {
             return null;
         }
-        
+        // Make shallow copies so we can store the metadata safely
         ActivityInfo ai = new ActivityInfo(a.info);
         ai.metaData = a.metaData;
         ai.processName = BPackageManagerService.fixProcessName(ai.packageName, ai.processName);
@@ -231,7 +236,7 @@ public class PackageManagerCompat {
         if (!checkUseInstalledOrHidden(flags, state, s.info.applicationInfo)) {
             return null;
         }
-        
+        // Make shallow copies so we can store the metadata safely
         ServiceInfo si = new ServiceInfo(s.info);
         si.metaData = s.metaData;
         si.processName = BPackageManagerService.fixProcessName(si.packageName, si.processName);
@@ -243,7 +248,7 @@ public class PackageManagerCompat {
         if (!checkUseInstalledOrHidden(flags, state, p.info.applicationInfo)) {
             return null;
         }
-        
+        // Make shallow copies so we can store the metadata safely
         ProviderInfo pi = new ProviderInfo(p.info);
         if (pi.authority == null)
             return null;
@@ -305,29 +310,19 @@ public class PackageManagerCompat {
         ai.publicSourceDir = sourceDir;
         ai.sourceDir = sourceDir;
         ai.uid = p.mExtras.appId;
+//        ai.uid = baseApplication.uid;
 
+        // Set ApplicationInfo fields (consolidated for API 29+)
+        BRApplicationInfo.get(ai)._set_primaryCpuAbi(Build.CPU_ABI);
+        BRApplicationInfo.get(ai)._set_scanPublicSourceDir(BRApplicationInfo.get(baseApplication).scanPublicSourceDir());
+        BRApplicationInfo.get(ai)._set_scanSourceDir(BRApplicationInfo.get(baseApplication).scanSourceDir());
 
-        if (BuildCompat.isL()) {
-            BRApplicationInfoL.get(ai)._set_primaryCpuAbi(Build.CPU_ABI);
-            BRApplicationInfoL.get(ai)._set_scanPublicSourceDir(BRApplicationInfoL.get(baseApplication).scanPublicSourceDir());
-            BRApplicationInfoL.get(ai)._set_scanSourceDir(BRApplicationInfoL.get(baseApplication).scanSourceDir());
-        }
-        if (BuildCompat.isN()) {
-            ai.deviceProtectedDataDir = BEnvironment.getDeDataDir(p.packageName, userId).getAbsolutePath();
+        ai.deviceProtectedDataDir = BEnvironment.getDeDataDir(p.packageName, userId).getAbsolutePath();
 
-            if (BRApplicationInfoN.get(ai)._check_deviceEncryptedDataDir() != null) {
-                BRApplicationInfoN.get(ai)._set_deviceEncryptedDataDir(ai.deviceProtectedDataDir);
-            }
-            if (BRApplicationInfoN.get(ai)._check_credentialEncryptedDataDir() != null) {
-                BRApplicationInfoN.get(ai)._set_credentialEncryptedDataDir(ai.dataDir);
-            }
-            if (BRApplicationInfoN.get(ai)._check_deviceProtectedDataDir() != null) {
-                BRApplicationInfoN.get(ai)._set_deviceProtectedDataDir(ai.deviceProtectedDataDir);
-            }
-            if (BRApplicationInfoN.get(ai)._check_credentialProtectedDataDir() != null) {
-                BRApplicationInfoN.get(ai)._set_credentialProtectedDataDir(ai.dataDir);
-            }
-        }
+        BRApplicationInfo.get(ai)._set_deviceEncryptedDataDir(ai.deviceProtectedDataDir);
+        BRApplicationInfo.get(ai)._set_credentialEncryptedDataDir(ai.dataDir);
+        BRApplicationInfo.get(ai)._set_deviceProtectedDataDir(ai.deviceProtectedDataDir);
+        BRApplicationInfo.get(ai)._set_credentialProtectedDataDir(ai.dataDir);
         fixJar(ai);
         return ai;
     }
@@ -336,7 +331,7 @@ public class PackageManagerCompat {
                                                      ApplicationInfo appInfo) {
         if (AppSystemEnv.isBlackPackage(appInfo.packageName))
             return false;
-        
+        // Returns false if the package is hidden system app until installed.
         if (!state.installed || state.hidden) {
             return false;
         }
@@ -347,20 +342,17 @@ public class PackageManagerCompat {
         String APACHE_LEGACY_JAR = "/system/framework/org.apache.http.legacy.boot.jar";
         String APACHE_LEGACY_JAR_Q = "/system/framework/org.apache.http.legacy.jar";
         Set<String> sharedLibraryFileList = new HashSet<>();
-        if (BuildCompat.isQ()) {
-            if (!FileUtils.isExist(APACHE_LEGACY_JAR_Q)) {
-                sharedLibraryFileList.add(APACHE_LEGACY_JAR);
-            } else {
-                sharedLibraryFileList.add(APACHE_LEGACY_JAR_Q);
-            }
-        } else {
+        // Always use Q+ path (minSdk 29)
+        if (!FileUtils.isExist(APACHE_LEGACY_JAR_Q)) {
             sharedLibraryFileList.add(APACHE_LEGACY_JAR);
+        } else {
+            sharedLibraryFileList.add(APACHE_LEGACY_JAR_Q);
         }
-
-
-
-
-
+//        if (BXposedManagerService.get().isXPEnable()) {
+//            ApplicationInfo base = BlackBoxCore.getContext().getApplicationInfo();
+//            sharedLibraryFileList.add(base.sourceDir);
+//        }
+//        sharedLibraryFileList.add(BEnvironment.JUNIT_JAR.getAbsolutePath());
         info.sharedLibraryFiles = sharedLibraryFileList.toArray(new String[]{});
     }
 

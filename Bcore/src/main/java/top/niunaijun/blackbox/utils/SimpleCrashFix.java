@@ -5,13 +5,19 @@ import android.content.ContextWrapper;
 import android.util.Log;
 import android.app.Application;
 
+import top.niunaijun.blackbox.BlackBoxCore;
 
-
+/**
+ * SimpleCrashFix - Essential crash prevention for app startup
+ * Cleaned up version with only essential functionality
+ */
 public class SimpleCrashFix {
     private static final String TAG = "SimpleCrashFix";
     private static boolean sIsInstalled = false;
 
-    
+    /**
+     * Install the essential crash fix
+     */
     public static void installSimpleFix() {
         if (sIsInstalled) {
             Slog.d(TAG, "Simple crash fix already installed");
@@ -21,10 +27,10 @@ public class SimpleCrashFix {
         try {
             Slog.d(TAG, "Installing essential crash fix...");
             
-            
+            // Install global exception handler
             installGlobalExceptionHandler();
             
-            
+            // Install context wrapper hook
             installContextWrapperHook();
             
             sIsInstalled = true;
@@ -34,49 +40,48 @@ public class SimpleCrashFix {
         }
     }
     
-    
+    /**
+     * Install a global exception handler to catch and handle null context crashes
+     */
     private static void installGlobalExceptionHandler() {
         try {
-            
+            // Get the current default handler
             Thread.UncaughtExceptionHandler currentHandler = Thread.getDefaultUncaughtExceptionHandler();
             
             Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
                 @Override
                 public void uncaughtException(Thread thread, Throwable throwable) {
-                    
+                    // Check if this is the specific null context crash we're trying to prevent
                     if (isNullContextCrash(throwable)) {
                         Slog.w(TAG, "Caught null context crash, preventing crash: " + throwable.getMessage());
-                        return; 
+                        return; // Prevent crash
                     }
 
-                    
+                    // Check for Google Play Services crashes
                     if (isGooglePlayServicesCrash(throwable)) {
                         Slog.w(TAG, "Caught Google Play Services crash, preventing crash: " + throwable.getMessage());
-                        return; 
+                        return; // Prevent crash - Google Play Services crashes are not critical
                     }
 
-                    
+                    // Check for WebView crashes
                     if (isWebViewCrash(throwable)) {
                         Slog.w(TAG, "Caught WebView crash, preventing crash: " + throwable.getMessage());
-                        return; 
+                        return; // Prevent crash - WebView crashes can be handled gracefully
                     }
 
-                    
+                    // Check for AttributionSource crashes
                     if (isAttributionSourceCrash(throwable)) {
                         Slog.w(TAG, "Caught AttributionSource crash, preventing crash: " + throwable.getMessage());
-                        return; 
+                        return; // Prevent crash - AttributionSource issues can be fixed
                     }
 
-                    
+                    // Check for social media app specific crashes
                     if (isSocialMediaAppCrash(throwable)) {
                         Slog.w(TAG, "Caught social media app crash, preventing crash: " + throwable.getMessage());
-                        return; 
+                        return; // Prevent crash - Social media apps should not crash
                     }
 
-                    
-                    Slog.e(TAG, "Fatal crash detected");
-
-                    
+                    // For other crashes, delegate to the original handler
                     if (currentHandler != null) {
                         currentHandler.uncaughtException(thread, throwable);
                     }
@@ -89,10 +94,12 @@ public class SimpleCrashFix {
         }
     }
     
-    
+    /**
+     * Install context wrapper hook to prevent null context crashes
+     */
     private static void installContextWrapperHook() {
         try {
-            
+            // Install a simple context wrapper hook
             ContextWrapperHook.installHook();
             Slog.d(TAG, "Context wrapper hook installed");
         } catch (Exception e) {
@@ -100,7 +107,9 @@ public class SimpleCrashFix {
         }
     }
     
-    
+    /**
+     * Check if the crash is related to null context issues
+     */
     private static boolean isNullContextCrash(Throwable throwable) {
         if (throwable == null) {
             return false;
@@ -115,7 +124,7 @@ public class SimpleCrashFix {
                    message.contains("getClassLoader");
         }
         
-        
+        // Check stack trace for context-related calls
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         if (stackTrace != null) {
             for (StackTraceElement element : stackTrace) {
@@ -135,7 +144,9 @@ public class SimpleCrashFix {
         return false;
     }
     
-    
+    /**
+     * Check if the crash is related to Google Play Services
+     */
     private static boolean isGooglePlayServicesCrash(Throwable throwable) {
         if (throwable == null) {
             return false;
@@ -149,7 +160,7 @@ public class SimpleCrashFix {
                    message.contains("com.google.android.gms");
         }
         
-        
+        // Check stack trace for Google Play Services related calls
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         if (stackTrace != null) {
             for (StackTraceElement element : stackTrace) {
@@ -165,7 +176,9 @@ public class SimpleCrashFix {
         return false;
     }
 
-    
+    /**
+     * Check if the crash is related to WebView issues
+     */
     private static boolean isWebViewCrash(Throwable throwable) {
         if (throwable == null) {
             return false;
@@ -180,7 +193,7 @@ public class SimpleCrashFix {
                    message.contains("data directory");
         }
         
-        
+        // Check stack trace for WebView related calls
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         if (stackTrace != null) {
             for (StackTraceElement element : stackTrace) {
@@ -199,7 +212,9 @@ public class SimpleCrashFix {
         return false;
     }
 
-    
+    /**
+     * Check if the crash is related to AttributionSource issues
+     */
     private static boolean isAttributionSourceCrash(Throwable throwable) {
         if (throwable == null) {
             return false;
@@ -214,7 +229,7 @@ public class SimpleCrashFix {
                    message.contains("UID mismatch");
         }
         
-        
+        // Check stack trace for AttributionSource related calls
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         if (stackTrace != null) {
             for (StackTraceElement element : stackTrace) {
@@ -232,7 +247,9 @@ public class SimpleCrashFix {
         return false;
     }
 
-    
+    /**
+     * Check if the crash is related to social media apps
+     */
     private static boolean isSocialMediaAppCrash(Throwable throwable) {
         if (throwable == null) {
             return false;
@@ -251,7 +268,7 @@ public class SimpleCrashFix {
                    message.contains("LinkedIn");
         }
         
-        
+        // Check stack trace for social media app related calls
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         if (stackTrace != null) {
             for (StackTraceElement element : stackTrace) {
@@ -260,7 +277,7 @@ public class SimpleCrashFix {
                     className.contains("com.instagram") ||
                     className.contains("com.whatsapp") ||
                     className.contains("org.telegram") ||
-                    className.contains("com.twitter") ||
+                    className.contains("com.twitter.android") ||
                     className.contains("com.zhiliaoapp.musically") ||
                     className.contains("com.snapchat") ||
                     className.contains("com.google.android.youtube") ||

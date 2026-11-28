@@ -5,7 +5,6 @@ import android.content.ContextWrapper;
 import android.util.*;
 
 import black.android.app.BRContextImpl;
-import black.android.app.BRContextImplKitkat;
 import black.android.content.AttributionSourceStateContext;
 import black.android.content.BRAttributionSource;
 import black.android.content.BRAttributionSourceState;
@@ -14,7 +13,14 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.utils.Slog;
 
-
+/**
+ * updated by alex5402 on 3/31/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class ContextCompat {
     public static final String TAG = "ContextCompat";
 
@@ -32,7 +38,7 @@ public class ContextCompat {
 
     public static void fix(Context context) {
         try {
-            
+            // Check if context is null
             if (context == null) {
                 Slog.w(TAG, "Context is null, skipping ContextCompat.fix");
                 return;
@@ -47,7 +53,7 @@ public class ContextCompat {
                 }
             }
             
-            
+            // Check if context is still null after unwrapping
             if (context == null) {
                 Slog.w(TAG, "Base context is null after unwrapping, skipping ContextCompat.fix");
                 return;
@@ -61,7 +67,7 @@ public class ContextCompat {
             }
 
             BRContextImpl.get(context)._set_mBasePackageName(BlackBoxCore.getHostPkg());
-            BRContextImplKitkat.get(context)._set_mOpPackageName(BlackBoxCore.getHostPkg());
+            BRContextImpl.get(context)._set_mOpPackageName(BlackBoxCore.getHostPkg());
             
             try {
                 BRContentResolver.get(context.getContentResolver())._set_mPackageName(BlackBoxCore.getHostPkg());
@@ -71,8 +77,6 @@ public class ContextCompat {
 
             if (BuildCompat.isS()) {
                 try {
-                    
-                    
                     fixAttributionSourceState(BRContextImpl.get(context).getAttributionSource(), BlackBoxCore.getHostUid());
                 } catch (Exception e) {
                     Slog.w(TAG, "Failed to fix attribution source state: " + e.getMessage());

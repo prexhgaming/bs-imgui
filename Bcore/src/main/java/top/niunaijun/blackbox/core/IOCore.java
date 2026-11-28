@@ -12,17 +12,19 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
-
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.utils.FileUtils;
 import top.niunaijun.blackbox.utils.TrieTree;
+/*import org.lsposed.lsparanoid.Obfuscate;
 
-
+@Obfuscate*/
 @SuppressLint("SdCardPath")
 public class IOCore {
     public static final String TAG = "IOCore";
@@ -38,11 +40,11 @@ public class IOCore {
         return sIOCore;
     }
 
-    
+    // /data/data/com.google/  ----->  /data/data/com.virtual/data/com.google/
     public void addRedirect(String origPath, String redirectPath) {
         if (TextUtils.isEmpty(origPath) || TextUtils.isEmpty(redirectPath) || mRedirectMap.get(origPath) != null)
             return;
-        
+        //Add the key to TrieTree
         mTrieTree.add(origPath);
         mRedirectMap.put(origPath, redirectPath);
         File redirectFile = new File(redirectPath);
@@ -68,7 +70,7 @@ public class IOCore {
         if (!TextUtils.isEmpty(search))
             return search;
 
-        
+        //Search the key from TrieTree
         String key = mTrieTree.search(path);
         if (!TextUtils.isEmpty(key))
             path = path.replace(key, Objects.requireNonNull(mRedirectMap.get(key)));
@@ -87,7 +89,7 @@ public class IOCore {
         if (TextUtils.isEmpty(path))
             return path;
 
-        
+        //Search the key from TrieTree
         String key = mTrieTree.search(path);
         if (!TextUtils.isEmpty(key))
             path = path.replace(key, Objects.requireNonNull(rule.get(key)));
@@ -102,39 +104,27 @@ public class IOCore {
         return new File(redirectPath(pathStr, rule));
     }
 
-    
-
+    // 由于正常情况Application已完成重定向，以下重定向是怕代码写死。
     public void enableRedirect(Context context) {
         Map<String, String> rule = new LinkedHashMap<>();
         Set<String> blackRule = new HashSet<>();
-        String packageName = context.getPackageName();
 
         try {
-            ApplicationInfo packageInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(packageName, PackageManager.GET_META_DATA, BlackBoxCore.getUserId());
+            //修改所有已安装的路径, 支持xposed module
             int systemUserId = BlackBoxCore.getHostUserId();
-            rule.put(String.format("/data/data/%s/lib", packageName), packageInfo.nativeLibraryDir);
-            rule.put(String.format("/data/user/%d/%s/lib", systemUserId, packageName), packageInfo.nativeLibraryDir);
+            List<ApplicationInfo> installedApplications = BlackBoxCore.getBPackageManager().getInstalledApplications(PackageManager.GET_META_DATA, BActivityThread.getUserId());
+            for (ApplicationInfo packageInfo : installedApplications) {
+                rule.put(String.format("/data/data/%s/lib", packageInfo.packageName), packageInfo.nativeLibraryDir);
+                rule.put(String.format("/data/user/%d/%s/lib", systemUserId, packageInfo.packageName), packageInfo.nativeLibraryDir);
 
-            rule.put(String.format("/data/data/%s", packageName), packageInfo.dataDir);
-            rule.put(String.format("/data/user/%d/%s", systemUserId, packageName), packageInfo.dataDir);
-
-            
-            File profilesRoot = new File(BEnvironment.getVirtualRoot(), "profiles");
-            FileUtils.mkdirs(profilesRoot.getAbsolutePath());
-            
-            rule.put("/data/misc/profiles", profilesRoot.getAbsolutePath());
-
-            File profilesCurDir = new File(profilesRoot, String.format("cur/%d/%s", BlackBoxCore.getUserId(), packageName));
-            File profilesRefDir = new File(profilesRoot, String.format("ref/%d/%s", BlackBoxCore.getUserId(), packageName));
-            FileUtils.mkdirs(profilesCurDir.getAbsolutePath());
-            FileUtils.mkdirs(profilesRefDir.getAbsolutePath());
-            rule.put(String.format("/data/misc/profiles/cur/%d/%s", BlackBoxCore.getUserId(), packageName), profilesCurDir.getAbsolutePath());
-            rule.put(String.format("/data/misc/profiles/ref/%d/%s", BlackBoxCore.getUserId(), packageName), profilesRefDir.getAbsolutePath());
+                rule.put(String.format("/data/data/%s", packageInfo.packageName), packageInfo.dataDir);
+                rule.put(String.format("/data/user/%d/%s", systemUserId, packageInfo.packageName), packageInfo.dataDir);
+            }
 
             if (BlackBoxCore.getContext().getExternalCacheDir() != null && context.getExternalCacheDir() != null) {
-                File external = BEnvironment.getExternalUserDir(BlackBoxCore.getUserId());
+                File external = BEnvironment.getExternalUserDir(BActivityThread.getUserId());
 
-                
+                // sdcard
                 rule.put("/sdcard", external.getAbsolutePath());
                 rule.put(String.format("/storage/emulated/%d", systemUserId), external.getAbsolutePath());
 
@@ -171,7 +161,7 @@ public class IOCore {
     }
 
     private void proc(Map<String, String> rule) {
-        int appPid = BlackBoxCore.getAppPid();
+        int appPid = BActivityThread.getAppPid();
         int pid = Process.myPid();
         String selfProc = "/proc/self/";
         String proc = "/proc/" + pid + "/";

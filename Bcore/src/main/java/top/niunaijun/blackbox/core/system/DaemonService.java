@@ -15,7 +15,10 @@ import androidx.core.app.NotificationCompat;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-
+/**
+ * Enhanced DaemonService with proper foreground service support and error handling.
+ * Fixed for Android 14+ compatibility and proper notification setup.
+ */
 public class DaemonService extends Service {
     public static final String TAG = "DaemonService";
     private static final int NOTIFY_ID = BlackBoxCore.getHostPkg().hashCode();
@@ -32,11 +35,9 @@ public class DaemonService extends Service {
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "DaemonService onCreate");
-        
-        
-        if (BuildCompat.isOreo()) {
-            createNotificationChannel();
-        }
+
+        // Create notification channel (required for Android 8.0+, always runs on Android 10+)
+        createNotificationChannel();
     }
 
     @Override
@@ -44,24 +45,22 @@ public class DaemonService extends Service {
         Log.d(TAG, "DaemonService onStartCommand");
         
         try {
-            
+            // Start the inner service
             Intent innerIntent = new Intent(this, DaemonInnerService.class);
             startService(innerIntent);
-            
-            
-            if (BuildCompat.isOreo()) {
-                if (!startForegroundService()) {
-                    Log.w(TAG, "Failed to start foreground service, falling back to regular service");
-                    return START_STICKY;
-                }
+
+            // Start foreground service (required for Android 8.0+, always runs on Android 10+)
+            if (!startForegroundService()) {
+                Log.w(TAG, "Failed to start foreground service, falling back to regular service");
+                return START_STICKY;
             }
-            
+
             Log.d(TAG, "DaemonService started successfully");
             return START_STICKY;
             
         } catch (Exception e) {
             Log.e(TAG, "Error starting DaemonService: " + e.getMessage(), e);
-            
+            // Return START_STICKY to allow the system to restart the service
             return START_STICKY;
         }
     }
@@ -72,32 +71,34 @@ public class DaemonService extends Service {
         super.onDestroy();
     }
 
-    
+    /**
+     * Create notification channel (required for Android 8.0+, always runs on Android 10+)
+     */
     private void createNotificationChannel() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW
-                );
-                channel.setDescription(CHANNEL_DESCRIPTION);
-                channel.setShowBadge(false);
-                channel.setSound(null, null);
-                channel.enableVibration(false);
-                
-                NotificationManager notificationManager = getSystemService(NotificationManager.class);
-                if (notificationManager != null) {
-                    notificationManager.createNotificationChannel(channel);
-                    Log.d(TAG, "Notification channel created successfully");
-                }
+            NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID,
+                CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            );
+            channel.setDescription(CHANNEL_DESCRIPTION);
+            channel.setShowBadge(false);
+            channel.setSound(null, null);
+            channel.enableVibration(false);
+
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+                Log.d(TAG, "Notification channel created successfully");
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to create notification channel: " + e.getMessage(), e);
         }
     }
 
-    
+    /**
+     * Start foreground service with proper notification
+     */
     private boolean startForegroundService() {
         try {
             Notification notification = createNotification();
@@ -115,7 +116,9 @@ public class DaemonService extends Service {
         }
     }
 
-    
+    /**
+     * Create proper notification for foreground service
+     */
     private Notification createNotification() {
         try {
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
@@ -133,7 +136,9 @@ public class DaemonService extends Service {
         }
     }
 
-    
+    /**
+     * Inner service to handle notification cancellation
+     */
     public static class DaemonInnerService extends Service {
         @Override
         public void onCreate() {
@@ -145,49 +150,14 @@ public class DaemonService extends Service {
         public int onStartCommand(Intent intent, int flags, int startId) {
             Log.i(TAG, "DaemonInnerService -> onStartCommand");
 
-            try {
-                // Keep the persistent foreground notification IN PLACE.
-                // The previous behavior cancelled the notification here, which
-                // on MIUI/Android demoted the daemon back to a background
-                // service and let aggressive battery policy kill it — that is
-                // the main cause of lost push delivery for backgrounded clones.
-                // Same channel/id reuse; a second startForeground is a no-op.
-                if (BuildCompat.isOreo()) {
-                    NotificationChannel channel = new NotificationChannel(
-                            CHANNEL_ID,
-                            CHANNEL_NAME,
-                            NotificationManager.IMPORTANCE_LOW
-                    );
-                    NotificationManager nm = getSystemService(NotificationManager.class);
-                    if (nm != null) nm.createNotificationChannel(channel);
-                }
+            // IMPORTANT: Do NOT cancel the notification!
+            // Keeping the foreground notification active prevents Android 16's
+            // process freezer from freezing the :black process (BR_FROZEN_REPLY fix)
+            Log.d(TAG, "DaemonInnerService completed, keeping notification active for freeze protection");
 
-                Notification notification = createKeepAliveNotification();
-                if (notification != null) {
-                    startForeground(NOTIFY_ID, notification);
-                    Log.d(TAG, "keep-alive foreground notification (re)applied");
-                }
-                return START_STICKY;
-            } catch (Exception e) {
-                Log.e(TAG, "Error in DaemonInnerService: " + e.getMessage(), e);
-                return START_STICKY;
-            }
-        }
-
-        private Notification createKeepAliveNotification() {
-            try {
-                return new NotificationCompat.Builder(this, CHANNEL_ID)
-                        .setContentTitle("WhatsApp sandbox")
-                        .setContentText("Linked apps stay reachable in the background")
-                        .setSmallIcon(android.R.drawable.ic_dialog_info)
-                        .setPriority(NotificationCompat.PRIORITY_MIN)
-                        .setOngoing(true)
-                        .setAutoCancel(false)
-                        .build();
-            } catch (Exception e) {
-                Log.e(TAG, "createKeepAliveNotification failed: " + e.getMessage());
-                return null;
-            }
+            // Stop this inner service (but leave the main service's notification)
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         @Override

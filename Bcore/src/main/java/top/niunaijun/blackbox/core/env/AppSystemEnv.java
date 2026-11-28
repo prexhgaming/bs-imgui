@@ -9,11 +9,18 @@ import java.util.List;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-
+/**
+ * updated by alex5402 on 4/21/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class AppSystemEnv {
     private static final List<String> sSystemPackages = new ArrayList<>();
     private static final List<String> sSuPackages = new ArrayList<>();
-
+    private static final List<String> sXposedPackages = new ArrayList<>();
     private static final List<String> sPreInstallPackages = new ArrayList<>();
 
     static {
@@ -27,17 +34,17 @@ public class AppSystemEnv {
         sSystemPackages.add("com.android.talkback");
         sSystemPackages.add("com.miui.gallery");
 
-        
+        // google Gboard
         sSystemPackages.add("com.google.android.inputmethod.latin");
-        
+        // sSystemPackages.add(BlackBoxCore.getHostPkg());
 
-        
+        // 华为
         sSystemPackages.add("com.huawei.webview");
 
-        
+        // oppo
         sSystemPackages.add("com.coloros.safecenter");
 
-        
+        // su
         sSuPackages.add("com.noshufou.android.su");
         sSuPackages.add("com.noshufou.android.su.elite");
         sSuPackages.add("eu.chainfire.supersu");
@@ -45,14 +52,10 @@ public class AppSystemEnv {
         sSuPackages.add("com.thirdparty.superuser");
         sSuPackages.add("com.yellowes.su");
 
+        sXposedPackages.add("de.robv.android.xposed.installer");
 
-
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && Build.VERSION.SDK_INT < 29){
-            
-        }else{
-
-        }
+        // sPreInstallPackages.add("com.huawei.hwid");
+        // Note: Samsung browser crash fix was for API 24-28 only, not needed on Android 10+
     }
 
     public static boolean isOpenPackage(String packageName) {
@@ -65,6 +68,8 @@ public class AppSystemEnv {
 
     public static boolean isBlackPackage(String packageName) {
         if (BlackBoxCore.get().isHideRoot() && sSuPackages.contains(packageName)) {
+            return true;
+        } else if (BlackBoxCore.get().isHideXposed() && sXposedPackages.contains(packageName)) {
             return true;
         }
         return false;

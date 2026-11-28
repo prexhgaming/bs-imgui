@@ -11,4 +11,4 @@ public:
 };
 
 
-#endif 
+#endif //BLACKBOX2_DEXFILEHOOK_H

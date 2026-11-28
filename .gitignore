@@ -19,7 +19,6 @@ local.properties
 *.iml
 *.o
 *.obj
-*.a
 *.so
 *.so.*
 *.dylib
@@ -27,11 +26,6 @@ local.properties
 *.exe
 *.lib
 *.pdb
-# ...except the prebuilt static libs the NDK build links against
-# (see app/src/main/jni/Android.mk)
-!app/src/main/jni/Dobby/libraries/**/*.a
-# ...and the engine's own prebuilt Dobby, linked into libblackbox.so.
-!Bcore/src/main/cpp/Dobby/**/*.a
 *.ilk
 *.dSYM/
 *.app/
@@ -100,7 +94,5 @@ desktop.ini
 .polydev/
 .base/
 uploads/
-# Uploaded third-party source archive — never commit (this repo is public).
-ptivatesrcaddmundo.zip
 # Extracted reference project (bcore source we took the launch flow from)
 bbref/

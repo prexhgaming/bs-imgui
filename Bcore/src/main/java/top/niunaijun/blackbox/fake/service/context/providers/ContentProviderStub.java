@@ -5,15 +5,20 @@ import android.os.IInterface;
 import java.lang.reflect.Method;
 
 import black.android.content.BRAttributionSource;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.Slog;
 import android.os.Bundle;
-import top.niunaijun.blackbox.utils.AttributionSourceUtils;
 
-
+/**
+ * updated by alex5402 on 4/8/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class ContentProviderStub extends ClassInvocationStub implements BContentProvider {
     public static final String TAG = "ContentProviderStub";
     private IInterface mBase;
@@ -47,44 +52,48 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             return method.invoke(mBase, args);
         }
         
-        
-        String methodName = method.getName();
-        
-        
-        
-        if ("call".equals(methodName)) {
-            
-            AttributionSourceUtils.fixAttributionSourceInArgs(args);
-        } else {
-            
-            if (args != null && args.length > 0) {
-                for (int i = 0; i < args.length; i++) {
-                    Object arg = args[i];
-                    if (arg instanceof String) {
-                        String strArg = (String) arg;
-                        
-                        if (!isSystemProviderAuthority(strArg)) {
-                            
-                            args[i] = mAppPkg;
-                        }
+        // Fix AttributionSource and package name issues
+        if (args != null && args.length > 0) {
+            for (int i = 0; i < args.length; i++) {
+                Object arg = args[i];
+                if (arg instanceof String) {
+                    String strArg = (String) arg;
+                    // Don't replace system provider authorities
+                    if (!isSystemProviderAuthority(strArg)) {
+                        // Replace package name with the correct one
+                        args[i] = mAppPkg;
+                    }
+                } else if (arg != null && arg.getClass().getName().equals(BRAttributionSource.getRealClass().getName())) {
+                    // Fix AttributionSource UID
+                    try {
+                        ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
+                    } catch (Exception e) {
+                        // If fixing AttributionSource fails, try to create a new one or skip
+                        Slog.w(TAG, "Failed to fix AttributionSource, continuing with original");
+                    }
+                } else if (arg != null && arg.getClass().getName().contains("AttributionSource")) {
+                    // Handle any AttributionSource-like objects that might cause UID issues
+                    try {
+                        // Try to fix UID using reflection
+                        fixAttributionSourceUid(arg);
+                    } catch (Exception e) {
+                        Slog.w(TAG, "Failed to fix AttributionSource-like object: " + e.getMessage());
                     }
                 }
-                
-                AttributionSourceUtils.fixAttributionSourceInArgs(args);
             }
         }
         
-        
-        methodName = method.getName();
+        // Pre-validate the call to prevent system-level SecurityException
+        String methodName = method.getName();
         if (methodName.equals("query") || methodName.equals("insert") || 
             methodName.equals("update") || methodName.equals("delete") || 
             methodName.equals("bulkInsert") || methodName.equals("call")) {
             
-            
+            // Check if this is likely to cause a UID mismatch
             try {
                 return method.invoke(mBase, args);
             } catch (Throwable e) {
-                
+                // Handle SecurityException and other UID-related errors
                 Throwable cause = e.getCause();
                 if (isUidMismatchError(cause)) {
                     Slog.w(TAG, "UID mismatch in ContentProvider call, returning safe default: " + cause.getMessage());
@@ -97,7 +106,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                     }
                 }
                 
-                
+                // For call method specifically, always return safe default on any error
                 if (methodName.equals("call")) {
                     Slog.w(TAG, "Error in call method, returning safe default: " + e.getMessage());
                     return getSafeDefaultValue(methodName, method.getReturnType());
@@ -107,11 +116,11 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             }
         }
         
-        
+        // For other methods, proceed normally
         try {
             return method.invoke(mBase, args);
         } catch (Throwable e) {
-            
+            // Handle SecurityException for UID mismatch in any method
             Throwable cause = e.getCause();
             if (isUidMismatchError(cause)) {
                 Slog.w(TAG, "UID mismatch in " + methodName + ", returning safe default: " + cause.getMessage());
@@ -124,31 +133,31 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
     private Object getSafeDefaultValue(String methodName) {
         switch (methodName) {
             case "query":
-                return null; 
+                return null; // Return null cursor
             case "insert":
-                return null; 
+                return null; // Return null URI
             case "update":
             case "delete":
-                return 0; 
+                return 0; // Return 0 rows affected
             case "bulkInsert":
-                return 0; 
+                return 0; // Return 0 rows inserted
             case "call":
-                return new Bundle(); 
+                return null; // Return null for call method
             case "getType":
-                return null; 
+                return null; // Return null MIME type
             case "openFile":
-                return null; 
+                return null; // Return null ParcelFileDescriptor
             case "openAssetFile":
-                return null; 
+                return null; // Return null AssetFileDescriptor
             default:
-                return null; 
+                return null; // Default fallback
         }
     }
 
     private boolean isSystemProviderAuthority(String authority) {
         if (authority == null) return false;
         
-        
+        // Check for system provider authorities that need special handling
         return authority.equals("settings") || 
                authority.equals("settings_global") || 
                authority.equals("settings_system") || 
@@ -158,14 +167,16 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                authority.startsWith("android.provider.Settings");
     }
     
-    
+    /**
+     * Enhanced UID mismatch detection and handling
+     */
     private boolean isUidMismatchError(Throwable error) {
         if (error == null) return false;
         
         String message = error.getMessage();
         if (message == null) return false;
         
-        
+        // Check for UID mismatch patterns
         return message.contains("Calling uid") && 
                message.contains("doesn't match source uid") ||
                message.contains("uid") && 
@@ -174,53 +185,57 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                message.contains("UID mismatch");
     }
     
-    
+    /**
+     * Get safe default value based on method name and return type
+     */
     private Object getSafeDefaultValue(String methodName, Class<?> returnType) {
         if (returnType == null) {
             return getSafeDefaultValue(methodName);
         }
         
-        
+        // Return type-specific safe defaults
         if (returnType == String.class) {
-            return "true"; 
+            return "true"; // Safe default for strings
         } else if (returnType == int.class || returnType == Integer.class) {
-            return 1; 
+            return 1; // Safe default for integers
         } else if (returnType == long.class || returnType == Long.class) {
-            return 1L; 
+            return 1L; // Safe default for longs
         } else if (returnType == float.class || returnType == Float.class) {
-            return 1.0f; 
+            return 1.0f; // Safe default for floats
         } else if (returnType == boolean.class || returnType == Boolean.class) {
-            return true; 
+            return true; // Safe default for booleans
         } else if (returnType == Bundle.class) {
-            return new Bundle(); 
+            return new Bundle(); // Safe default for bundles
         }
         
-        
+        // Fallback to method-specific defaults
         return getSafeDefaultValue(methodName);
     }
 
-    
+    /**
+     * Fix AttributionSource UID to prevent crashes on Android 12+
+     */
     private void fixAttributionSourceUid(Object attributionSource) {
         try {
             if (attributionSource == null) return;
             
             Class<?> attributionSourceClass = attributionSource.getClass();
             
-            
+            // Try to find and set the UID field
             try {
                 java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField("mUid");
                 uidField.setAccessible(true);
                 uidField.set(attributionSource, BlackBoxCore.getHostUid());
                 Slog.d(TAG, "Fixed AttributionSource UID via field access");
             } catch (NoSuchFieldException e) {
-                
+                // Try alternative field names
                 try {
                     java.lang.reflect.Field uidField = attributionSourceClass.getDeclaredField("uid");
                     uidField.setAccessible(true);
                     uidField.set(attributionSource, BlackBoxCore.getHostUid());
                     Slog.d(TAG, "Fixed AttributionSource UID via alternative field");
                 } catch (NoSuchFieldException e2) {
-                    
+                    // Try using setter method
                     try {
                         java.lang.reflect.Method setUidMethod = attributionSourceClass.getDeclaredMethod("setUid", int.class);
                         setUidMethod.setAccessible(true);
@@ -232,14 +247,14 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                 }
             }
             
-            
+            // Also try to fix package name
             try {
                 java.lang.reflect.Field packageField = attributionSourceClass.getDeclaredField("mPackageName");
                 packageField.setAccessible(true);
                 packageField.set(attributionSource, mAppPkg);
                 Slog.d(TAG, "Fixed AttributionSource package name");
             } catch (Exception e) {
-                
+                // Ignore package name fixing errors
             }
             
         } catch (Exception e) {

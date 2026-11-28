@@ -1,23 +1,30 @@
 package top.niunaijun.blackbox.core.env;
 
+import android.content.Context;
+import android.os.Build;
+import android.os.Environment;
+
 import java.io.File;
 import java.util.Locale;
 
 import top.niunaijun.blackbox.BlackBoxCore;
-import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.app.BActivityThread;
+/*import org.lsposed.lsparanoid.Obfuscate;
 
+@Obfuscate*/
 
 public class BEnvironment {
-    private static final File sVirtualRoot = new File(BlackBoxCore.getContext().getCacheDir().getParent(), "blackbox");
-    private static final File sExternalVirtualRoot = BlackBoxCore.getContext().getExternalFilesDir("blackbox");
-
+    private static final File sVirtualRoot = new File(BlackBoxCore.getContext().getCacheDir().getParent(), "");
+    private static final File sExternalVirtualRoot = BlackBoxCore.getContext().getExternalFilesDir("");
     public static File JUNIT_JAR = new File(getCacheDir(), "junit.apk");
     public static File EMPTY_JAR = new File(getCacheDir(), "empty.apk");
 
+
+
     public static void load() {
         FileUtils.mkdirs(sVirtualRoot);
-        FileUtils.mkdirs(sExternalVirtualRoot);
+        FileUtils.mkdirs(getExternalUserDir(0));
         FileUtils.mkdirs(getSystemDir());
         FileUtils.mkdirs(getCacheDir());
         FileUtils.mkdirs(getProcDir());
@@ -67,33 +74,38 @@ public class BEnvironment {
         return new File(getSystemDir(), "fake-location.conf");
     }
 
+    public static File getFakeDeviceConf() {
+        return new File(getSystemDir(), "fake-device.conf");
+    }
+
     public static File getPackageConf(String packageName) {
         return new File(getAppDir(packageName), "package.conf");
     }
 
     public static File getExternalUserDir(int userId) {
-        return new File(sExternalVirtualRoot, String.format(Locale.CHINA, "storage/emulated/%d/", userId));
+        return new File(String.format(Locale.CHINA,"/storage/emulated/%d/SdCard/", userId));
     }
 
     public static File getUserDir(int userId) {
-        return new File(sVirtualRoot, String.format(Locale.CHINA, "data/user/%d", userId));
+        return new File(sVirtualRoot, String.format(Locale.CHINA, "/data/user/%d", userId));
     }
-
-    public static File getExternalObbDir(String packageName, int userId) {
-        return new File(getExternalUserDir(userId), String.format(Locale.CHINA, "Android/obb/%s", packageName));
-    }
-
 
     public static File getDeDataDir(String packageName, int userId) {
-        return new File(sVirtualRoot, String.format(Locale.CHINA, "data/user_de/%d/%s", userId, packageName));
+        return new File(sVirtualRoot, String.format(Locale.CHINA, "/data/user_de/%d/%s", userId, packageName));
     }
 
     public static File getExternalDataDir(String packageName, int userId) {
         return new File(getExternalUserDir(userId), String.format(Locale.CHINA, "Android/data/%s", packageName));
     }
 
+    public static File getExternalObbDir(String packageName) {
+        return new File(getExternalUserDir(0), String.format(Locale.CHINA, "Android/obb/%s/", packageName));
+    }
 
     public static File getDataDir(String packageName, int userId) {
+        if (packageName.contains(packageName)){
+            return new File(String.format(Locale.CHINA, "/data/user/%d/%s/", userId, BlackBoxCore.getContext().getPackageName()));
+        }
         return new File(sVirtualRoot, String.format(Locale.CHINA, "data/user/%d/%s", userId, packageName));
     }
 
@@ -143,7 +155,16 @@ public class BEnvironment {
         return new File(getAppDir(packageName), "lib");
     }
 
+  /*  public static File getReqLibDir(String packageName) {
+        return new File(getAppDir(packageName), "lib/libloader.so");
+    }*/
+
     public static File getXSharedPreferences(String packageName, String prefFileName) {
-       return new File(BEnvironment.getDataDir(packageName, BlackBoxCore.getUserId()), "shared_prefs/" + prefFileName + ".xml");
+        return new File(getDataDir(packageName, BActivityThread.getUserId()), "shared_prefs/" + prefFileName + ".xml");
     }
+
+   /* public static File getReqLibDiry(String packageName) {
+        return new File(getAppDir(packageName), "lib/libbgmi.so");
+    }*/
+
 }

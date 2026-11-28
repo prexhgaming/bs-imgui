@@ -23,28 +23,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 
-
+/**
+ * Comprehensive crash monitoring and recovery system that detects and handles
+ * all types of crashes including Java exceptions, native crashes, and system failures.
+ */
 public class CrashMonitor {
     private static final String TAG = "CrashMonitor";
     private static boolean sIsInitialized = false;
     
-    
+    // Crash statistics
     private static final AtomicInteger sTotalCrashes = new AtomicInteger(0);
     private static final AtomicInteger sJavaCrashes = new AtomicInteger(0);
     private static final AtomicInteger sNativeCrashes = new AtomicInteger(0);
     private static final AtomicInteger sRecoveredCrashes = new AtomicInteger(0);
     
-    
+    // Crash history for analysis
     private static final Map<String, CrashInfo> sCrashHistory = new HashMap<>();
     
-    
+    // Recovery strategies
     private static final Map<String, RecoveryStrategy> sRecoveryStrategies = new HashMap<>();
     
-    
+    // Monitoring state
     private static boolean sIsMonitoring = false;
     private static Handler sMainHandler;
     
-    
+    /**
+     * Crash information structure
+     */
     public static class CrashInfo {
         public final String crashType;
         public final String packageName;
@@ -71,7 +76,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Recovery strategy interface
+     */
     public interface RecoveryStrategy {
         String getName();
         boolean canHandle(String crashType, String errorMessage);
@@ -79,7 +86,9 @@ public class CrashMonitor {
         int getPriority();
     }
     
-    
+    /**
+     * Initialize the crash monitoring system
+     */
     public static void initialize() {
         if (sIsInitialized) {
             return;
@@ -88,16 +97,16 @@ public class CrashMonitor {
         try {
             Slog.d(TAG, "Initializing comprehensive crash monitoring system...");
             
-            
+            // Initialize main handler
             sMainHandler = new Handler(Looper.getMainLooper());
             
-            
+            // Register recovery strategies
             registerRecoveryStrategies();
             
-            
+            // Install global crash handlers
             installGlobalCrashHandlers();
             
-            
+            // Start monitoring
             startMonitoring();
             
             sIsInitialized = true;
@@ -108,22 +117,24 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Register all available recovery strategies
+     */
     private static void registerRecoveryStrategies() {
         try {
-            
+            // Java exception recovery
             sRecoveryStrategies.put("JavaException", new JavaExceptionRecovery());
             
-            
+            // Native crash recovery
             sRecoveryStrategies.put("NativeCrash", new NativeCrashRecovery());
             
-            
+            // DEX corruption recovery
             sRecoveryStrategies.put("DexCorruption", new DexCorruptionRecovery());
             
-            
+            // WebView crash recovery
             sRecoveryStrategies.put("WebViewCrash", new WebViewCrashRecovery());
             
-            
+            // Memory crash recovery
             sRecoveryStrategies.put("MemoryCrash", new MemoryCrashRecovery());
             
             Slog.d(TAG, "Registered " + sRecoveryStrategies.size() + " recovery strategies");
@@ -133,10 +144,12 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Install global crash handlers
+     */
     private static void installGlobalCrashHandlers() {
         try {
-            
+            // Install Java exception handler
             Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
                 @Override
                 public void uncaughtException(Thread thread, Throwable throwable) {
@@ -144,7 +157,7 @@ public class CrashMonitor {
                 }
             });
             
-            
+            // Install system error handler
             installSystemErrorHandler();
             
             Slog.d(TAG, "Global crash handlers installed");
@@ -154,17 +167,21 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Install system error handler
+     */
     private static void installSystemErrorHandler() {
         try {
-            
+            // This would be implemented with native code for system-level error handling
             Slog.d(TAG, "System error handler prepared");
         } catch (Exception e) {
             Slog.w(TAG, "Failed to install system error handler: " + e.getMessage());
         }
     }
     
-    
+    /**
+     * Start crash monitoring
+     */
     private static void startMonitoring() {
         if (sIsMonitoring) {
             return;
@@ -173,10 +190,10 @@ public class CrashMonitor {
         try {
             sIsMonitoring = true;
             
-            
+            // Start periodic health checks
             startPeriodicHealthChecks();
             
-            
+            // Start crash pattern analysis
             startCrashPatternAnalysis();
             
             Slog.d(TAG, "Crash monitoring started");
@@ -186,57 +203,63 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Start periodic health checks
+     */
     private static void startPeriodicHealthChecks() {
         if (sMainHandler != null) {
             sMainHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     performHealthCheck();
-                    
+                    // Schedule next health check in 30 seconds
                     sMainHandler.postDelayed(this, 30000);
                 }
-            }, 30000); 
+            }, 30000); // First check in 30 seconds
         }
     }
     
-    
+    /**
+     * Start crash pattern analysis
+     */
     private static void startCrashPatternAnalysis() {
         if (sMainHandler != null) {
             sMainHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     analyzeCrashPatterns();
-                    
+                    // Schedule next analysis in 60 seconds
                     sMainHandler.postDelayed(this, 60000);
                 }
-            }, 60000); 
+            }, 60000); // First analysis in 60 seconds
         }
     }
     
-    
+    /**
+     * Handle a crash event
+     */
     public static void handleCrash(String crashType, Thread thread, Throwable throwable) {
         try {
             sTotalCrashes.incrementAndGet();
             
-            
+            // Determine crash type
             if (crashType.equals("JavaException")) {
                 sJavaCrashes.incrementAndGet();
             } else if (crashType.equals("NativeCrash")) {
                 sNativeCrashes.incrementAndGet();
             }
             
-            
+            // Create crash info
             CrashInfo crashInfo = createCrashInfo(crashType, thread, throwable);
             
-            
+            // Log the crash
             Slog.w(TAG, "Crash detected: " + crashInfo);
             
-            
+            // Store in history
             String crashKey = crashType + "_" + System.currentTimeMillis();
             sCrashHistory.put(crashKey, crashInfo);
             
-            
+            // Attempt recovery
             boolean recovered = attemptCrashRecovery(crashInfo);
             
             if (recovered) {
@@ -249,7 +272,7 @@ public class CrashMonitor {
                 Slog.w(TAG, "Crash recovery failed");
             }
             
-            
+            // Write crash log
             writeCrashLog(crashInfo);
             
         } catch (Exception e) {
@@ -257,7 +280,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Create crash information from crash event
+     */
     private static CrashInfo createCrashInfo(String crashType, Thread thread, Throwable throwable) {
         try {
             String packageName = getCurrentPackageName();
@@ -272,7 +297,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Get current package name
+     */
     private static String getCurrentPackageName() {
         try {
             return BActivityThread.getAppPackageName();
@@ -283,13 +310,15 @@ public class CrashMonitor {
                     return context.getPackageName();
                 }
             } catch (Exception ex) {
-                
+                // Ignore
             }
             return "unknown";
         }
     }
     
-    
+    /**
+     * Get stack trace as string
+     */
     private static String getStackTrace(Throwable throwable) {
         if (throwable == null) return "";
         
@@ -303,12 +332,14 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Attempt to recover from a crash
+     */
     private static boolean attemptCrashRecovery(CrashInfo crashInfo) {
         try {
             Slog.d(TAG, "Attempting crash recovery for: " + crashInfo.crashType);
             
-            
+            // Find applicable recovery strategies
             for (RecoveryStrategy strategy : sRecoveryStrategies.values()) {
                 if (strategy.canHandle(crashInfo.crashType, crashInfo.errorMessage)) {
                     Slog.d(TAG, "Trying recovery strategy: " + strategy.getName());
@@ -331,7 +362,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Write crash log to file
+     */
     private static void writeCrashLog(CrashInfo crashInfo) {
         try {
             Context context = BlackBoxCore.getContext();
@@ -364,12 +397,14 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Perform periodic health check
+     */
     private static void performHealthCheck() {
         try {
             Slog.d(TAG, "Performing periodic health check...");
             
-            
+            // Check memory usage
             Runtime runtime = Runtime.getRuntime();
             long maxMemory = runtime.maxMemory();
             long totalMemory = runtime.totalMemory();
@@ -380,10 +415,10 @@ public class CrashMonitor {
             
             if (memoryUsagePercent > 80) {
                 Slog.w(TAG, "High memory usage detected: " + String.format("%.1f%%", memoryUsagePercent));
-                System.gc(); 
+                System.gc(); // Force garbage collection
             }
             
-            
+            // Check thread count
             ThreadGroup rootGroup = Thread.currentThread().getThreadGroup();
             while (rootGroup.getParent() != null) {
                 rootGroup = rootGroup.getParent();
@@ -402,7 +437,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Analyze crash patterns
+     */
     private static void analyzeCrashPatterns() {
         try {
             if (sCrashHistory.isEmpty()) {
@@ -411,25 +448,25 @@ public class CrashMonitor {
             
             Slog.d(TAG, "Analyzing crash patterns...");
             
-            
+            // Count crashes by type
             Map<String, Integer> crashesByType = new HashMap<>();
             Map<String, Integer> crashesByPackage = new HashMap<>();
             
             for (CrashInfo crashInfo : sCrashHistory.values()) {
-                
+                // Count by type
                 crashesByType.put(crashInfo.crashType, 
                     crashesByType.getOrDefault(crashInfo.crashType, 0) + 1);
                 
-                
+                // Count by package
                 crashesByPackage.put(crashInfo.packageName, 
                     crashesByPackage.getOrDefault(crashInfo.packageName, 0) + 1);
             }
             
-            
+            // Log patterns
             Slog.d(TAG, "Crash patterns by type: " + crashesByType);
             Slog.d(TAG, "Crash patterns by package: " + crashesByPackage);
             
-            
+            // Check for problematic patterns
             for (Map.Entry<String, Integer> entry : crashesByType.entrySet()) {
                 if (entry.getValue() > 5) {
                     Slog.w(TAG, "High crash rate detected for type: " + entry.getKey() + 
@@ -442,7 +479,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Get crash statistics
+     */
     public static String getCrashStats() {
         return "Crash Statistics:\n" +
                "Total Crashes: " + sTotalCrashes.get() + "\n" +
@@ -454,7 +493,9 @@ public class CrashMonitor {
                    (double) sRecoveredCrashes.get() / sTotalCrashes.get() * 100 : 0);
     }
     
-    
+    /**
+     * Get comprehensive crash monitoring status
+     */
     public static String getStatus() {
         StringBuilder status = new StringBuilder();
         status.append("Crash Monitoring Status:\n");
@@ -467,7 +508,9 @@ public class CrashMonitor {
         return status.toString();
     }
     
-    
+    /**
+     * Clear crash history
+     */
     public static void clearCrashHistory() {
         sCrashHistory.clear();
         sTotalCrashes.set(0);
@@ -477,9 +520,11 @@ public class CrashMonitor {
         Slog.d(TAG, "Crash history cleared");
     }
     
+    // Recovery Strategy Implementations
     
-    
-    
+    /**
+     * Java exception recovery strategy
+     */
     private static class JavaExceptionRecovery implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -494,8 +539,8 @@ public class CrashMonitor {
         @Override
         public boolean attemptRecovery(CrashInfo crashInfo) {
             try {
-                
-                return true; 
+                // Use existing crash prevention mechanisms
+                return true; // Assume success for now
             } catch (Exception e) {
                 Slog.w(TAG, "Java exception recovery failed: " + e.getMessage());
                 return false;
@@ -508,7 +553,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Native crash recovery strategy
+     */
     private static class NativeCrashRecovery implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -523,8 +570,8 @@ public class CrashMonitor {
         @Override
         public boolean attemptRecovery(CrashInfo crashInfo) {
             try {
-                
-                return true; 
+                // Use native crash prevention mechanisms
+                return true; // Assume success for now
             } catch (Exception e) {
                 Slog.w(TAG, "Native crash recovery failed: " + e.getMessage());
                 return false;
@@ -537,7 +584,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * DEX corruption recovery strategy
+     */
     private static class DexCorruptionRecovery implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -554,8 +603,8 @@ public class CrashMonitor {
         @Override
         public boolean attemptRecovery(CrashInfo crashInfo) {
             try {
-                
-                return true; 
+                // Use DEX recovery mechanisms
+                return true; // Assume success for now
             } catch (Exception e) {
                 Slog.w(TAG, "DEX corruption recovery failed: " + e.getMessage());
                 return false;
@@ -568,7 +617,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * WebView crash recovery strategy
+     */
     private static class WebViewCrashRecovery implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -585,8 +636,8 @@ public class CrashMonitor {
         @Override
         public boolean attemptRecovery(CrashInfo crashInfo) {
             try {
-                
-                return true; 
+                // Use WebView recovery mechanisms
+                return true; // Assume success for now
             } catch (Exception e) {
                 Slog.w(TAG, "WebView crash recovery failed: " + e.getMessage());
                 return false;
@@ -599,7 +650,9 @@ public class CrashMonitor {
         }
     }
     
-    
+    /**
+     * Memory crash recovery strategy
+     */
     private static class MemoryCrashRecovery implements RecoveryStrategy {
         @Override
         public String getName() {
@@ -617,7 +670,7 @@ public class CrashMonitor {
         @Override
         public boolean attemptRecovery(CrashInfo crashInfo) {
             try {
-                
+                // Force garbage collection
                 System.gc();
                 return true;
             } catch (Exception e) {

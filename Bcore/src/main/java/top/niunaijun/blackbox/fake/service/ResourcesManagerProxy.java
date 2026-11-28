@@ -8,7 +8,9 @@ import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 
-
+/**
+ * Proxy for ResourcesManager to block problematic resource loading
+ */
 public class ResourcesManagerProxy extends ClassInvocationStub {
     public static final String TAG = "ResourcesManagerProxy";
 
@@ -24,12 +26,12 @@ public class ResourcesManagerProxy extends ClassInvocationStub {
 
     @Override
     protected Object getWho() {
-        return null; 
+        return null; // This is a static hook, not an instance hook
     }
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
-        
+        // This is a static hook, no injection needed
     }
 
     @Override
@@ -48,18 +50,18 @@ public class ResourcesManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String path = (String) args[0];
             
-            
+            // Block problematic resource paths
             if (path != null && (path.contains("resource-cache") || 
                                 path.contains("@idmap") || 
                                 path.contains(".frro") ||
                                 path.contains("systemui") ||
                                 path.contains("data@resource-cache@"))) {
                 Log.d(TAG, "Blocking problematic ApkAssets load: " + path);
-                
+                // Return null or throw exception to prevent loading
                 return null;
             }
             
-            
+            // For non-problematic paths, proceed normally
             return method.invoke(who, args);
         }
     }
@@ -70,18 +72,18 @@ public class ResourcesManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String path = (String) args[0];
             
-            
+            // Block problematic overlay paths
             if (path != null && (path.contains("resource-cache") || 
                                 path.contains("@idmap") || 
                                 path.contains(".frro") ||
                                 path.contains("systemui") ||
                                 path.contains("data@resource-cache@"))) {
                 Log.d(TAG, "Blocking problematic overlay path: " + path);
-                
+                // Return null to prevent loading
                 return null;
             }
             
-            
+            // For non-problematic paths, proceed normally
             return method.invoke(who, args);
         }
     }

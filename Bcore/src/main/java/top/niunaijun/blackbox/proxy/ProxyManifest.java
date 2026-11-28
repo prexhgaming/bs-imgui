@@ -4,7 +4,14 @@ import java.util.Locale;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 
-
+/**
+ * updated by alex5402 on 4/1/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class ProxyManifest {
     public static final int FREE_COUNT = 50;
 

@@ -1,6 +1,6 @@
-
-
-
+//
+// Created by Milk on 4/10/21.
+//
 
 #include "IO.h"
 #include "Log.h"
@@ -35,48 +35,12 @@ char *replace(const char *str, const char *src, const char *dst) {
 }
 
 const char *IO::redirectPath(const char *__path) {
-    
-    if (strstr(__path, "resource-cache")) {
-        ALOGD("Blocking resource-cache path: %s", __path);
-        return "/dev/null";
-    }
-    
-    
-    if (strstr(__path, "@idmap")) {
-        ALOGD("Blocking idmap path: %s", __path);
-        return "/dev/null";
-    }
-    
-    
-    if (strstr(__path, "systemui") && (strstr(__path, ".frro") || strstr(__path, "-accent-") || strstr(__path, "-dynamic-") || strstr(__path, "-neutral-"))) {
-        ALOGD("Blocking systemui problematic path: %s", __path);
-        return "/dev/null";
-    }
-    
-    
-    if (strstr(__path, "data@resource-cache@")) {
-        ALOGD("Blocking data@resource-cache@ pattern: %s", __path);
-        return "/dev/null";
-    }
-    
-    
-    if (strstr(__path, ".frro")) {
-        ALOGD("Blocking .frro file: %s", __path);
-        return "/dev/null";
-    }
-    
-    
-    if (strstr(__path, "systemui")) {
-        ALOGD("Blocking systemui path: %s", __path);
-        return "/dev/null";
-    }
-
     list<IO::RelocateInfo>::iterator iterator;
     for (iterator = relocate_rule.begin(); iterator != relocate_rule.end(); ++iterator) {
         IO::RelocateInfo info = *iterator;
         if (strstr(__path, info.targetPath) && !strstr(__path, "/blackbox/")) {
             char *ret = replace(__path, info.targetPath, info.relocatePath);
-            
+            // ALOGD("redirectPath %s  => %s", __path, ret);
             return ret;
         }
     }
@@ -84,20 +48,10 @@ const char *IO::redirectPath(const char *__path) {
 }
 
 jstring IO::redirectPath(JNIEnv *env, jstring path) {
-
-
-
-
     return BoxCore::redirectPathString(env, path);
 }
 
 jobject IO::redirectPath(JNIEnv *env, jobject path) {
-
-
-
-
-
-
     return BoxCore::redirectPathFile(env, path);
 }
 

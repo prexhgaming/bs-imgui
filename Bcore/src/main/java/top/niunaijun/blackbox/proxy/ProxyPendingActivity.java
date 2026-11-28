@@ -11,7 +11,14 @@ import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.proxy.record.ProxyPendingRecord;
 import top.niunaijun.blackbox.utils.Slog;
 
-
+/**
+ * updated by alex5402 on 3/28/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class ProxyPendingActivity extends Activity {
     public static final String TAG = "ProxyPendingActivity";
 

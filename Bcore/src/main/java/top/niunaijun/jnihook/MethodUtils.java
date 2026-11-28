@@ -1,6 +1,13 @@
 package top.niunaijun.jnihook;
 
-
+/**
+ * updated by alex5402 on 3/8/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 
 import androidx.annotation.Keep;
 
@@ -9,17 +16,17 @@ import java.lang.reflect.Method;
 @Keep
 public class MethodUtils {
 
-    
+    // native call
     public static String getDeclaringClass(final Method method) {
         return method.getDeclaringClass().getName().replace(".", "/");
     }
 
-    
+    // native call
     public static String getMethodName(final Method method) {
         return method.getName();
     }
 
-    
+    // native call
     public static String getDesc(final Method method) {
         final StringBuffer buf = new StringBuffer();
         buf.append("(");

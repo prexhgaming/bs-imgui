@@ -11,7 +11,14 @@ import java.util.Map;
 
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 
-
+/**
+ * updated by alex5402 on 3/30/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public abstract class ClassInvocationStub implements InvocationHandler, IInjectHook {
     public static final String TAG = ClassInvocationStub.class.getSimpleName();
 
@@ -43,14 +50,19 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
     @Override
     public void injectHook() {
         mBase = getWho();
-        
-        if (mBase == null) {
-            return;
+
+        // Handle null for static/class method hooks that don't need a proxy object
+        if (mBase != null) {
+            mProxyInvocation = Proxy.newProxyInstance(
+                mBase.getClass().getClassLoader(),
+                MethodParameterUtils.getAllInterface(mBase.getClass()),
+                this
+            );
+            if (!onlyProxy) {
+                inject(mBase, mProxyInvocation);
+            }
         }
-        mProxyInvocation = Proxy.newProxyInstance(mBase.getClass().getClassLoader(), MethodParameterUtils.getAllInterface(mBase.getClass()), this);
-        if (!onlyProxy) {
-            inject(mBase, mProxyInvocation);
-        }
+        // When mBase is null, skip proxy creation - hooks are still registered below
 
         onBindMethod();
         Class<?>[] declaredClasses = this.getClass().getDeclaredClasses();
@@ -102,16 +114,16 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-
-
-
-
-
-
-
-
-
-
+//        for debug
+//        if(method.getName().contains("finish")){
+//            Log.d(TAG,"finishAAAAAAAAAAAAAAA:" + method.getName());
+//            Thread currentThread = Thread.currentThread();
+//            StackTraceElement[] stackTraceElements = currentThread.getStackTrace();
+//            for (StackTraceElement element : stackTraceElements) {
+//                // 打印调用栈信息
+//                Log.d(TAG,element.toString());
+//            }
+//        }
 
         MethodHook methodHook = mMethodHookMap.get(method.getName());
         if (methodHook == null || !methodHook.isEnable()) {

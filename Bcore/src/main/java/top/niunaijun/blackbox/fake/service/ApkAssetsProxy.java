@@ -8,7 +8,9 @@ import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 
-
+/**
+ * Proxy for ApkAssets to block problematic resource loading
+ */
 public class ApkAssetsProxy extends ClassInvocationStub {
     public static final String TAG = "ApkAssetsProxy";
 
@@ -24,12 +26,12 @@ public class ApkAssetsProxy extends ClassInvocationStub {
 
     @Override
     protected Object getWho() {
-        return null; 
+        return null; // This is a static hook, not an instance hook
     }
 
     @Override
     protected void inject(Object baseInvocation, Object proxyInvocation) {
-        
+        // This is a static hook, no injection needed
     }
 
     @Override
@@ -48,7 +50,7 @@ public class ApkAssetsProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String path = (String) args[0];
             
-            
+            // Block problematic resource paths
             if (path != null && (path.contains("resource-cache") || 
                                 path.contains("@idmap") || 
                                 path.contains(".frro") ||
@@ -58,7 +60,7 @@ public class ApkAssetsProxy extends ClassInvocationStub {
                 throw new RuntimeException("Blocked problematic overlay path: " + path);
             }
             
-            
+            // For non-problematic paths, proceed normally
             return method.invoke(who, args);
         }
     }
@@ -69,7 +71,7 @@ public class ApkAssetsProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             String path = (String) args[0];
             
-            
+            // Block problematic resource paths
             if (path != null && (path.contains("resource-cache") || 
                                 path.contains("@idmap") || 
                                 path.contains(".frro") ||
@@ -79,7 +81,7 @@ public class ApkAssetsProxy extends ClassInvocationStub {
                 throw new RuntimeException("Blocked problematic native load path: " + path);
             }
             
-            
+            // For non-problematic paths, proceed normally
             return method.invoke(who, args);
         }
     }

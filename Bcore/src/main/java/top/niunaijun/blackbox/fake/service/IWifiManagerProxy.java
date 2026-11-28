@@ -2,6 +2,7 @@ package top.niunaijun.blackbox.fake.service;
 
 import android.content.Context;
 import android.net.wifi.WifiInfo;
+import android.os.WorkSource;
 import android.util.Log;
 
 import java.lang.reflect.Method;
@@ -13,6 +14,8 @@ import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
+import top.niunaijun.blackbox.utils.ArrayUtils;
+import top.niunaijun.blackbox.utils.MethodParameterUtils;
 
 
 public class IWifiManagerProxy extends BinderInvocationStub {
@@ -39,13 +42,11 @@ public class IWifiManagerProxy extends BinderInvocationStub {
 
     @ProxyMethod("getConnectionInfo")
     public static class GetConnectionInfo extends MethodHook {
-        
+
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
             WifiInfo wifiInfo = (WifiInfo) method.invoke(who, args);
-            BRWifiInfo.get(wifiInfo)._set_mBSSID("ac:62:5a:82:65:c4");
-            BRWifiInfo.get(wifiInfo)._set_mMacAddress("ac:62:5a:82:65:c4");
-            BRWifiInfo.get(wifiInfo)._set_mWifiSsid(BRWifiSsid.get().createFromAsciiEncoded("BlackBox_Wifi"));
             return wifiInfo;
         }
 
@@ -57,16 +58,131 @@ public class IWifiManagerProxy extends BinderInvocationStub {
         }
 
         public static int ip2Int(String ipString) {
-            
+            // 取 ip 的各段
             String[] ipSlices = ipString.split("\\.");
             int rs = 0;
             for (int i = 0; i < ipSlices.length; i++) {
-                
+                // 将 ip 的每一段解析为 int，并根据位置左移 8 位
                 int intSlice = Integer.parseInt(ipSlices[i]) << 8 * i;
-                
+                // 或运算
                 rs = rs | intSlice;
             }
             return rs;
+        }
+    }
+
+    @ProxyMethod("getBatchedScanResults")
+    public static class getBatchedScanResults extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("acquireWifiLock")
+    public static class acquireWifiLock extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int index = ArrayUtils.indexOfFirst(args, WorkSource.class);
+            if (index >= 0) {
+                args[index] = null;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("updateWifiLockWorkSource")
+    public static class updateWifiLockWorkSource extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int index = ArrayUtils.indexOfFirst(args, WorkSource.class);
+            if (index >= 0) {
+                args[index] = null;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("startLocationRestrictedScan")
+    public static class startLocationRestrictedScan extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int index = ArrayUtils.indexOfFirst(args, WorkSource.class);
+            if (index >= 0) {
+                args[index] = null;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("requestBatchedScan")
+    public static class requestBatchedScan extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int index = ArrayUtils.indexOfFirst(args, WorkSource.class);
+            if (index >= 0) {
+                args[index] = null;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("setWifiEnabled")
+    public static class setWifiEnabled extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("getConfiguredNetworks")
+    public static class getConfiguredNetworks extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("setWifiApConfiguration")
+    public static class setWifiApConfiguration extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return 0;
+        }
+    }
+
+    @ProxyMethod("startLocalOnlyHotspot")
+    public static class startLocalOnlyHotspot extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
+            return method.invoke(who, args);
+        }
+    }
+
+    @ProxyMethod("startScan")
+    public static class startScan extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            MethodParameterUtils.replaceFirstAppPkg(args);
+            int index = ArrayUtils.indexOfFirst(args, WorkSource.class);
+            if (index >= 0) {
+                args[index] = null;
+            }
+            return method.invoke(who, args);
         }
     }
 }

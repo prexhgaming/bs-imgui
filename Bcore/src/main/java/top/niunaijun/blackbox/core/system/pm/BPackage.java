@@ -20,9 +20,15 @@ import android.os.Parcelable;
 import java.util.ArrayList;
 
 import top.niunaijun.blackbox.entity.pm.InstallOption;
-import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-
+/**
+ * updated by alex5402 on 4/21/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class BPackage implements Parcelable {
     public ArrayList<Activity> activities = new ArrayList<Activity>(0);
     public ArrayList<Activity> receivers = new ArrayList<Activity>(0);
@@ -47,9 +53,9 @@ public class BPackage implements Parcelable {
     public String baseCodePath;
 
     public int mSharedUserLabel;
-    
+    // Applications hardware preferences
     public ArrayList<ConfigurationInfo> configPreferences = null;
-    
+    // Applications requested features
     public ArrayList<FeatureInfo> reqFeatures = null;
 
     public InstallOption installOption;
@@ -117,14 +123,11 @@ public class BPackage implements Parcelable {
         }
 
         this.requestedPermissions = aPackage.requestedPermissions;
-        if (BuildCompat.isPie()) {
-            this.mSigningDetails = new SigningDetails(aPackage.mSigningDetails);
-            this.mSignatures = this.mSigningDetails.signatures;
-        } else {
-            this.mSignatures = aPackage.mSignatures;
-        }
+        // Always use Pie+ SigningDetails API on API 29+
+        this.mSigningDetails = new SigningDetails(aPackage.mSigningDetails);
+        this.mSignatures = this.mSigningDetails.signatures;
         this.mAppMetaData = aPackage.mAppMetaData;
-        
+        // this.mExtras = new BPackageSettings((PackageSetting) aPackage.mExtras);
         this.packageName = aPackage.packageName;
         this.mPreferredOrder = aPackage.mPreferredOrder;
         this.mSharedUserId = aPackage.mSharedUserId;
@@ -209,12 +212,11 @@ public class BPackage implements Parcelable {
         }
 
         in.readStringList(this.requestedPermissions);
-        if (BuildCompat.isPie()) {
-            this.mSigningDetails = in.readParcelable(SigningDetails.class.getClassLoader());
-        }
+        // Always use Pie+ SigningDetails API on API 29+
+        this.mSigningDetails = in.readParcelable(SigningDetails.class.getClassLoader());
         this.mSignatures = in.createTypedArray(Signature.CREATOR);
         this.mAppMetaData = in.readBundle(Bundle.class.getClassLoader());
-
+//        this.mExtras = in.readParcelable(BPackageSettings.class.getClassLoader());
         this.packageName = in.readString();
         this.mPreferredOrder = in.readInt();
         this.mSharedUserId = in.readString();
@@ -699,12 +701,11 @@ public class BPackage implements Parcelable {
         }
 
         dest.writeStringList(this.requestedPermissions);
-        if (BuildCompat.isPie()) {
-            dest.writeParcelable(this.mSigningDetails, flags);
-        }
+        // Always use Pie+ SigningDetails API on API 29+
+        dest.writeParcelable(this.mSigningDetails, flags);
         dest.writeTypedArray(this.mSignatures, flags);
         dest.writeBundle(this.mAppMetaData);
-
+//        dest.writeParcelable(this.mExtras, flags);
         dest.writeString(this.packageName);
         dest.writeInt(this.mPreferredOrder);
         dest.writeString(this.mSharedUserId);

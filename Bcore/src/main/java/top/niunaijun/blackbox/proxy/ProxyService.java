@@ -10,9 +10,15 @@ import androidx.core.app.NotificationCompat;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.dispatcher.AppServiceDispatcher;
-import top.niunaijun.blackbox.utils.compat.BuildCompat;
 
-
+/**
+ * updated by alex5402 on 3/30/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class ProxyService extends Service {
     public static final String TAG = "StubService";
 
@@ -61,9 +67,8 @@ public class ProxyService extends Service {
     private void showNotification() {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext(), getPackageName() + ".blackbox_proxy")
                 .setPriority(NotificationCompat.PRIORITY_MAX);
-        if (BuildCompat.isOreo()) {
-            startForeground(BlackBoxCore.getHostPkg().hashCode(), builder.build());
-        }
+        // Always start foreground service on API 29+ (required since Oreo)
+        startForeground(BlackBoxCore.getHostPkg().hashCode(), builder.build());
     }
 
     public static class P0 extends ProxyService {

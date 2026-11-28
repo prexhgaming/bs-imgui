@@ -12,7 +12,9 @@ import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
 
-
+/**
+ * Comprehensive audio permission proxy to handle all audio-related permission issues.
+ */
 public class AudioPermissionProxy extends BinderInvocationStub {
     public static final String TAG = "AudioPermissionProxy";
 
@@ -29,7 +31,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
         
         try {
-            
+            // Try to get the audio service interface
             Class<?> stubClass = Class.forName("android.media.IAudioService$Stub");
             Method asInterfaceMethod = stubClass.getMethod("asInterface", IBinder.class);
             Object iface = asInterfaceMethod.invoke(null, binder);
@@ -57,7 +59,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         return false;
     }
 
-    
+    // Force microphone to be unmuted
     @ProxyMethod("isMicrophoneMuted")
     public static class IsMicrophoneMuted extends MethodHook {
         @Override
@@ -67,21 +69,21 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Force microphone to be unmuted
     @ProxyMethod("setMicrophoneMute")
     public static class SetMicrophoneMute extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "AudioPermission: setMicrophoneMute called, forcing unmute");
-            
+            // Force microphone to be unmuted
             if (args != null && args.length > 0) {
-                args[0] = false; 
+                args[0] = false; // Force unmute
             }
             return method.invoke(who, args);
         }
     }
 
-    
+    // Force microphone to be unmuted for user
     @ProxyMethod("isMicrophoneMutedForUser")
     public static class IsMicrophoneMutedForUser extends MethodHook {
         @Override
@@ -91,21 +93,21 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Force microphone to be unmuted for user
     @ProxyMethod("setMicrophoneMuteForUser")
     public static class SetMicrophoneMuteForUser extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             Slog.d(TAG, "AudioPermission: setMicrophoneMuteForUser called, forcing unmute");
-            
+            // Force microphone to be unmuted
             if (args != null && args.length > 1) {
-                args[1] = false; 
+                args[1] = false; // Force unmute
             }
             return method.invoke(who, args);
         }
     }
 
-    
+    // Allow audio recording operations
     @ProxyMethod("startRecording")
     public static class StartRecording extends MethodHook {
         @Override
@@ -115,7 +117,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio recording operations
     @ProxyMethod("stopRecording")
     public static class StopRecording extends MethodHook {
         @Override
@@ -125,7 +127,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio recording operations
     @ProxyMethod("isRecordingActive")
     public static class IsRecordingActive extends MethodHook {
         @Override
@@ -135,7 +137,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio recording operations
     @ProxyMethod("getRecordingState")
     public static class GetRecordingState extends MethodHook {
         @Override
@@ -145,7 +147,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio recording state queries
     @ProxyMethod("getRecordingStateForUser")
     public static class GetRecordingStateForUser extends MethodHook {
         @Override
@@ -155,7 +157,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio focus requests
     @ProxyMethod("requestAudioFocus")
     public static class RequestAudioFocus extends MethodHook {
         @Override
@@ -165,7 +167,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio focus client registration
     @ProxyMethod("registerAudioFocusClient")
     public static class RegisterAudioFocusClient extends MethodHook {
         @Override
@@ -175,7 +177,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio focus client unregistration
     @ProxyMethod("unregisterAudioFocusClient")
     public static class UnregisterAudioFocusClient extends MethodHook {
         @Override
@@ -185,7 +187,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio focus abandonment
     @ProxyMethod("abandonAudioFocus")
     public static class AbandonAudioFocus extends MethodHook {
         @Override
@@ -195,7 +197,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio mode changes
     @ProxyMethod("setMode")
     public static class SetMode extends MethodHook {
         @Override
@@ -205,7 +207,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio mode queries
     @ProxyMethod("getMode")
     public static class GetMode extends MethodHook {
         @Override
@@ -215,7 +217,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio stream volume changes
     @ProxyMethod("setStreamVolume")
     public static class SetStreamVolume extends MethodHook {
         @Override
@@ -225,7 +227,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio stream volume queries
     @ProxyMethod("getStreamVolume")
     public static class GetStreamVolume extends MethodHook {
         @Override
@@ -235,7 +237,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio stream max volume queries
     @ProxyMethod("getStreamMaxVolume")
     public static class GetStreamMaxVolume extends MethodHook {
         @Override
@@ -245,7 +247,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio stream mute operations
     @ProxyMethod("setStreamMute")
     public static class SetStreamMute extends MethodHook {
         @Override
@@ -255,7 +257,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio stream mute queries
     @ProxyMethod("isStreamMute")
     public static class IsStreamMute extends MethodHook {
         @Override
@@ -265,7 +267,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio routing operations
     @ProxyMethod("setSpeakerphoneOn")
     public static class SetSpeakerphoneOn extends MethodHook {
         @Override
@@ -275,7 +277,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow audio routing queries
     @ProxyMethod("isSpeakerphoneOn")
     public static class IsSpeakerphoneOn extends MethodHook {
         @Override
@@ -285,7 +287,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow bluetooth audio operations
     @ProxyMethod("setBluetoothScoOn")
     public static class SetBluetoothScoOn extends MethodHook {
         @Override
@@ -295,7 +297,7 @@ public class AudioPermissionProxy extends BinderInvocationStub {
         }
     }
 
-    
+    // Allow bluetooth audio queries
     @ProxyMethod("isBluetoothScoOn")
     public static class IsBluetoothScoOn extends MethodHook {
         @Override

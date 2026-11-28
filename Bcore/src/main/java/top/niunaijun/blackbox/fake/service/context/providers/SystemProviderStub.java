@@ -9,7 +9,14 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 
-
+/**
+ * updated by alex5402 on 4/8/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class SystemProviderStub extends ClassInvocationStub implements BContentProvider {
     private IInterface mBase;
 
@@ -45,42 +52,17 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
         if ("asBinder".equals(method.getName())) {
             return method.invoke(mBase, args);
         }
-        
-        String methodName = method.getName();
-        
-        
-        
-        if ("call".equals(methodName)) {
-            
-            if (args != null) {
-                Class<?> attributionSourceClass = BRAttributionSource.getRealClass();
-                for (int i = 0; i < args.length; i++) {
-                    Object arg = args[i];
-                    
-                    if (arg != null && attributionSourceClass != null && 
-                            arg.getClass().getName().equals(attributionSourceClass.getName())) {
-                        ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
-                    }
-                }
-            }
-            return method.invoke(mBase, args);
-        }
-        
-        
+        // Don't replace system provider authorities like "settings", "media", etc.
         if (args != null && args.length > 0) {
             Object arg = args[0];
             if (arg instanceof String) {
                 String authority = (String) arg;
-                
+                // Only replace if it's not a system provider authority
                 if (!isSystemProviderAuthority(authority)) {
                     args[0] = BlackBoxCore.getHostPkg();
                 }
-            } else if (arg != null) {
-                Class<?> attrSourceClass = BRAttributionSource.getRealClass();
-                
-                if (attrSourceClass != null && arg.getClass().getName().equals(attrSourceClass.getName())) {
-                    ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
-                }
+            } else if (arg != null && arg.getClass().getName().equals(BRAttributionSource.getRealClass().getName())) {
+                ContextCompat.fixAttributionSourceState(arg, BlackBoxCore.getHostUid());
             }
         }
         return method.invoke(mBase, args);
@@ -88,7 +70,7 @@ public class SystemProviderStub extends ClassInvocationStub implements BContentP
 
     private boolean isSystemProviderAuthority(String authority) {
         if (authority == null) return false;
-        
+        // Common system provider authorities that should not be replaced
         return authority.equals("settings") || 
                authority.equals("media") || 
                authority.equals("downloads") || 

@@ -24,7 +24,7 @@ android {
     // compileSdk here is a hard build failure, not a warning.
     compileSdk 36
     buildToolsVersion '36.1.0'
-    ndkVersion '27.0.12077973'
+    ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig {
         applicationId 'com.zyn.bs'

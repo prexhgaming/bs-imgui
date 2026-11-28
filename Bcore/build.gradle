@@ -1,113 +1,96 @@
 apply plugin: 'com.android.library'
 
+// ---------------------------------------------------------------------------
+// The sandbox engine ("KERO" build, BCORE-KERO-FixedSDK).
+//
+// Differences from the previously vendored engines worth knowing:
+//   - native side is a **CMake** project (src/main/cpp/CMakeLists.txt), not
+//     ndk-build, and it links no prebuilt third-party .a
+//   - BlackReflection comes from JitPack
+//     (com.github.CodingGay.BlackReflection core + compiler), so the in-tree
+//     `black-reflection/` and `compiler/` Gradle modules are gone
+//   - package layout is unchanged: top.niunaijun.blackbox (public API
+//     BlackBoxCore), top.niunaijun.jnihook, black/** mirrors, android/** stubs
+// ---------------------------------------------------------------------------
+
 android {
     namespace 'top.niunaijun.blackbox'
 
     compileSdk rootProject.ext.compileSdkVersion
-
-
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    // The engine is pinned to the NDK it was written against; the payload in
+    // :app keeps its own (newer) NDK. CI installs both.
+    ndkVersion rootProject.ext.engineNdkVersion
     aidlPackagedList "android/app/IServiceConnection.aidl"
     aidlPackagedList "android/accounts/IAccountManagerResponse.aidl"
+
     buildFeatures {
         aidl true
     }
-    buildFeatures {
-        prefab true
-    }
+
     defaultConfig {
+        // Matches :app (the final APK uses the app's value anyway).
         minSdkVersion rootProject.ext.minSdk
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
 
         consumerProguardFiles "consumer-rules.pro"
         ndk {
-            
-            abiFilters 'arm64-v8a' , 'armeabi-v7a'
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
     }
 
     buildTypes {
         release {
-            minifyEnabled true
+            minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
     externalNativeBuild {
-        ndkBuild {
-            path 'src/main/cpp/Android.mk'
+        cmake {
+            path file('./src/main/cpp/CMakeLists.txt')
         }
-        ndkVersion = "29.0.13846066"
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_21
-        targetCompatibility JavaVersion.VERSION_21
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
-    
-    
-    tasks.withType(JavaCompile) {
-        options.compilerArgs << "-Xlint:-deprecation" << "-Xlint:-unchecked" << "-Xlint:-rawtypes"
-        options.fork = true
-        options.forkOptions.jvmArgs << "-Xmx2048m"
+
+    aaptOptions {
+        cruncherEnabled = false
+        useNewCruncher = false
     }
+
     testOptions {
         unitTests.returnDefaultValues = true
     }
-    packagingOptions {
-        jniLibs {
-            useLegacyPackaging true
-        }
-    }
-    lintOptions {
 
+    // `lint` is the current name for the old `lintOptions` block.
+    lint {
         checkReleaseBuilds false
         abortOnError false
         warningsAsErrors false
         disable "UnusedResources", 'RestrictedApi'
         textOutput "stdout"
         textReport false
-        checkOnly 'NewApi', 'InlinedApi'
+        check 'NewApi', 'InlinedApi'
     }
 }
 
-
-// Strip the AIDL-generated "Using: ..." comment line which contains backslash sequences
-// that Java's compiler mis-parses as Unicode escapes on Windows paths.
-tasks.matching { it.name.startsWith('compileReleaseJavaWithJavac') || it.name.startsWith('compileDebugJavaWithJavac') }.all {
-    doFirst {
-        def aidlOut = file("$buildDir/generated/aidl_source_output_dir")
-        if (aidlOut.exists()) {
-            aidlOut.eachFileRecurse { f ->
-                if (f.name.endsWith('.java')) {
-                    def content = f.text
-                    if (content.contains(' * Using:')) {
-                        content = content.replaceAll(/(?m)^ \* Using:.*$/, '')
-                        f.text = content
-                    }
-                }
-            }
-        }
-    }
-}
-
-tasks.withType(Javadoc) {
-    options.addStringOption('Xdoclint:none', '-quiet')
-    options.addStringOption('encoding', 'UTF-8')
-    options.addStringOption('charSet', 'UTF-8')
-}
-
+// NOTE: the engine's own build.gradle carried a legacy `dexOptions { ... }`
+// block. That DSL was removed from AGP 8.x and it only ever tuned the old
+// pre-D8 dexer, so it is deliberately not carried over.
 
 dependencies {
     implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
-  implementation 'com.google.android.material:material:1.3.0'
-    implementation(project(":black-reflection"))
-    annotationProcessor(project(":compiler"))
     implementation 'androidx.appcompat:appcompat:1.2.0'
-
     implementation 'com.moandjiezana.toml:toml4j:0.7.2'
-
     implementation 'com.github.tiann:FreeReflection:3.2.2'
-
-
-
-    
+    // BlackReflection runtime + annotation processor (replaces the in-tree
+    // :black-reflection and :compiler modules).
+    implementation 'com.github.CodingGay.BlackReflection:core:1.1.4'
+    annotationProcessor 'com.github.CodingGay.BlackReflection:compiler:1.1.4'
 }

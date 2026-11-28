@@ -13,7 +13,14 @@ import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Reflector;
 
-
+/**
+ * updated by alex5402 on 4/9/21.
+ * * ∧＿∧
+ * (`･ω･∥
+ * 丶　つ０
+ * しーＪ
+ * TFNQw5HgWUS33Ke1eNmSFTwoQySGU7XNsK (USDT TRC20)
+ */
 public class OsStub extends ClassInvocationStub {
     public static final String TAG = "OsStub";
     private Object mBase;
@@ -50,9 +57,9 @@ public class OsStub extends ClassInvocationStub {
                 if (args[i] instanceof String && ((String) args[i]).startsWith("/")) {
                     String orig = (String) args[i];
                     args[i] = IOCore.get().redirectPath(orig);
-
-
-
+//                    if (!ObjectsCompat.equals(orig, args[i])) {
+//                        Log.d(TAG, "redirectPath: " + orig + "  => " + args[i]);
+//                    }
                 }
             }
         }
@@ -88,7 +95,7 @@ public class OsStub extends ClassInvocationStub {
     private static int getFakeUid(int callUid) {
         if (callUid > 0 && callUid <= Process.FIRST_APPLICATION_UID)
             return callUid;
-
+//            Log.d(TAG, "getuid: " + BActivityThread.getAppPackageName() + ", " + BActivityThread.getAppUid());
         if (BActivityThread.isThreadInit() && BActivityThread.currentActivityThread().isInit()) {
             return BActivityThread.getBAppId();
         } else {

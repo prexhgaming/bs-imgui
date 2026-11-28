@@ -6,27 +6,33 @@ buildscript {
         maven { url 'https://jitpack.io' }
     }
     dependencies {
-        // 8.13.2 is what the vendored engine builds with: compileSdk 36 and
+        // 8.13.2 is what this project builds with: compileSdk 36 and
         // aidlPackagedList both need a modern AGP.
         classpath 'com.android.tools.build:gradle:8.13.2'
     }
 }
 
-// Read by every module's build.gradle — Bcore and its helpers use rootProject.ext.
+// Read by every module's build.gradle — Bcore uses rootProject.ext.
 ext {
     compileSdkVersion = 36
     buildToolsVersion = "36.1.0"
     targetSdkVersion = 28
     minSdk = 24
+
+    // :app's payload NDK (pinned again in app/build.gradle).
+    ndkVersion = "27.0.12077973"
+    // The engine (:Bcore) is pinned to the NDK it was written against.
+    engineNdkVersion = "24.0.8215888"
+    // Both native builds are driven by Gradle: the engine uses CMake, the
+    // payload uses ndk-build.
+    cmakeVersion = "3.22.1"
 }
 
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
 
-// There is deliberately NO flat-jar ("bcoreJar") packaging task here any more.
+// There is deliberately NO flat-jar ("bcoreJar") packaging task here.
 // The sandbox core is consumed as a normal Gradle library module
 // (app depends on `project(':Bcore')`), so Gradle always compiles the core from
-// the sources on disk and can never reuse a stale prebuilt jar. A
-// `dist/bcore-all.jar` dropped into app/libs used to be an option; that path is
-// removed because a leftover jar there silently shadows source changes.
+// the sources on disk and can never reuse a stale prebuilt jar.
