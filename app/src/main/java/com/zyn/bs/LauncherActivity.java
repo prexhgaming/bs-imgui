@@ -33,8 +33,8 @@ import com.zyn.bs.ui.LauncherView;
  *
  * <p>A single target game is used ({@link #TARGET_PACKAGE}); its label and icon
  * are read from the device at runtime, never hardcoded. There is no OBB step and
- * no game picker. The encrypted-asset engine that paints the wallpaper is
- * {@link Crypto}; the screen itself lives in {@code com.zyn.bs.ui}.</p>
+ * no game picker. The wallpaper is compiled in as raw bytes ({@link Wallpaper});
+ * the screen itself lives in {@code com.zyn.bs.ui}.</p>
  */
 public class LauncherActivity extends AppCompatActivity {
 

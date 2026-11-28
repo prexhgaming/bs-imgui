@@ -13,8 +13,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.zyn.bs.Crypto;
 import com.zyn.bs.R;
+import com.zyn.bs.Wallpaper;
 
 /**
  * The loader's home screen. Built entirely in code — no layout XML.
@@ -35,12 +35,6 @@ public final class LauncherView extends FrameLayout {
     public interface Listener {
         void onPrimaryAction();
     }
-
-    /**
-     * Opaque name of the encrypted wallpaper in {@code assets/}, assembled from
-     * fragments so neither the asset listing nor the dex advertises it.
-     */
-    private static final String ASSET_WALLPAPER = "a7f3" + "c9" + ".bin";
 
     private final View scrimTop;
     private final View scrimBottom;
@@ -67,7 +61,7 @@ public final class LauncherView extends FrameLayout {
         ImageView wallpaper = new ImageView(context);
         wallpaper.setScaleType(ImageView.ScaleType.CENTER_CROP);
         addView(wallpaper, fullBleed());
-        loadWallpaper(context, wallpaper);
+        loadWallpaper(wallpaper);
 
         scrimTop = scrim(true);
         addView(scrimTop, scrimParams(Gravity.TOP));
@@ -321,19 +315,19 @@ public final class LauncherView extends FrameLayout {
     // -------------------------------------------------------------- helpers
 
     /**
-     * Decrypts the wallpaper off the main thread and paints it when ready.
+     * Decodes the wallpaper off the main thread and paints it when ready.
      *
-     * <p>The image ships only as AES-GCM ciphertext in {@code assets/}; if it
-     * fails authentication (tampered APK) nothing is drawn and the dark
-     * background colour shows through instead.</p>
+     * <p>The artwork is compiled in as raw bytes ({@link Wallpaper}), so there is
+     * no asset to open and no decryption step that can fail: if the decode
+     * somehow returns nothing, the dark background colour simply shows
+     * through.</p>
      */
-    private void loadWallpaper(Context context, ImageView target) {
-        final Context app = context.getApplicationContext();
+    private void loadWallpaper(ImageView target) {
         final int width = getResources().getDisplayMetrics().widthPixels;
         final int height = getResources().getDisplayMetrics().heightPixels;
 
         Thread worker = new Thread(() -> {
-            Bitmap bitmap = Crypto.decodeBitmap(app, ASSET_WALLPAPER, width, height);
+            Bitmap bitmap = Wallpaper.decode(width, height);
             if (bitmap == null) {
                 return;
             }
@@ -342,7 +336,7 @@ public final class LauncherView extends FrameLayout {
                 Motion.fade(target, 0L, Motion.SLOW);
                 Motion.kenBurns(target, 22000L, 1.07f);
             });
-        }, "wallpaper-decrypt");
+        }, "wallpaper-decode");
         worker.setDaemon(true);
         worker.start();
     }

@@ -20,9 +20,11 @@
   and loaded only for the game's **main** process (`packageName == processName`).
 - `com.zyn.bs.LauncherActivity` — the sandbox flow only (resolve / install / launch). All UI
   lives in `com.zyn.bs.ui`.
-- `com.zyn.bs.Crypto` — the asset crypto engine (`a7f3c9.bin` → wallpaper). `read()` and
-  `decodeBitmap()` are its entry points; the AES-256-GCM format and the split/masked key are
-  unchanged from when this code lived inside the activity, so existing `assets/` blobs stay valid.
+- `com.zyn.bs.Wallpaper` — the launcher wallpaper, compiled in as **raw bytes** (a 1080x1920
+  JPEG, 313 KB) split across 63 `cNN()` slice methods. No `assets/`, no decryption: `decode(w, h)`
+  concatenates the slices once and returns a downsampled `Bitmap`. The slices exist because a
+  single method caps at 64 KB of bytecode, so never merge them into one array literal.
+  Regenerate with `tmp/gen_wallpaper.py` (needs the source image at the workspace root).
 - `com.zyn.bs.ui` — `Theme` (tokens, drawables, text), `Motion` (every animation helper),
   `LauncherView` (the screen), `IconOrbit`, `PulseDots`, `SweepBar`. Restyling starts in `Theme`:
   colours, gradients and radii all come from there.
