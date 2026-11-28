@@ -4,10 +4,10 @@
 # shrunk and renamed. Components declared in AndroidManifest.xml (Application,
 # Activity, services) are kept automatically by AGP, so they need no rule here.
 #
-# The elite engine keeps ITSELF through the consumer ProGuard rules inside
-# app/libs/elite.aar, which AGP merges into this build automatically. The
+# The BlackBox engine keeps ITSELF through the consumer ProGuard rules inside
+# app/libs/Bcore-release.aar, which AGP merges into this build automatically. The
 # explicit keeps further down are belt-and-braces for the classes the engine
-# reaches by name (its proxy pools and the SDK activation entry point).
+# reaches by name (its reflection mirrors and the proxy pools).
 
 # ---------------------------------------------------------------------------
 # JNI — native methods are resolved by their Java name, which must not change.
@@ -17,15 +17,16 @@
 }
 
 # ---------------------------------------------------------------------------
-# elite engine (app/libs/elite.aar)
+# BlackBox engine (app/libs/Bcore-release.aar)
 # ---------------------------------------------------------------------------
-# The AAR ships no consumer rules, so the classes it looks up by name — the
-# installer entry point, the proxy activity/provider/service pools and the SDK
-# activation manager — are pinned here.
--keep class com.elite.** { *; }
--keep class net_62v.** { *; }
--keep class android.Meta.** { *; }
--keep class android.MetaCore.** { *; }
+# The AAR ships consumer rules, but the engine also resolves mirror classes by
+# name at runtime, so the whole surface is pinned here as well. There is no
+# licence/activation class in this engine — nothing of that kind to keep.
+-keep class top.niunaijun.blackbox.** { *; }
+-keep class top.niunaijun.jnihook.** { *; }
+-keep class mirror.** { *; }
+-keep class black.** { *; }
+-keep class com.android.** { *; }
 -keep class org.lsposed.lsparanoid.** { *; }
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,8 @@
 -keepattributes Signature
 -keepattributes InnerClasses
 
-# Silence warnings for optional/platform classes the dependencies probe for.
--dontwarn org.lsposed.**
--dontwarn kotlin.**
+# ---------------------------------------------------------------------------
+# The engine reflects into android.* and its own mirrors, so those framework
+# classes are resolved by name at runtime.
+# ---------------------------------------------------------------------------
+-keep class android.** { *; }

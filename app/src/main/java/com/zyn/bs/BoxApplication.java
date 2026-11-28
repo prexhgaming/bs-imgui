@@ -6,53 +6,53 @@ import android.util.Log;
 
 import androidx.appcompat.app.AppCompatDelegate;
 
-import com.elite.EliteInstaller;
-import com.elite.app.configuration.AppLifecycleCallback;
-import com.elite.app.configuration.ClientConfiguration;
-
-import net_62v.external.MetaActivationManager;
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.configuration.ClientConfiguration;
 
 import java.io.File;
 
 /**
- * Host Application for the {@code elite} sandbox engine.
+ * Host Application for the {@code BlackBox} sandbox engine (Bcore).
  *
- * <p>The boot sequence is the one the vbox host app uses, in the same order:</p>
+ * <p>Boot sequence, in the order BlackBox expects:</p>
  * <ol>
- *   <li>{@code attachBaseContext()} → {@code EliteInstaller.get().doAttachBaseContext()}
- *       with a {@link ClientConfiguration} that hides root/xposed and disables the
- *       daemon service.</li>
- *   <li>{@code onCreate()} → {@code MetaActivationManager.activateSdk(KEY)}: the SDK
- *       key is compiled in, so activation happens automatically on every start and
- *       the user is never asked for it.</li>
- *   <li>{@code EliteInstaller.get().doCreate()} → engine ready.</li>
- *   <li>{@code addAppLifecycleCallback()} → the native payload is loaded inside the
- *       guest process, just before the game's own Application is created.</li>
+ *   <li><b>Static initializer</b> → {@link CrashHandler#install()}, so crashes are
+ *       logged even if the engine fails while attaching.</li>
+ *   <li>{@code attachBaseContext()} → crash context attached first, then
+ *       {@code BlackBoxCore.get().doAttachBaseContext()} with a
+ *       {@link ClientConfiguration} that reports the host package, hides root and
+ *       disables the daemon service.</li>
+ *   <li>{@code onCreate()} → {@code BlackBoxCore.get().doCreate()} → engine ready.</li>
+ *   <li>In a sandboxed process, the native payload is loaded right away, which is
+ *       before the guest Application is bound.</li>
  * </ol>
+ *
+ * <p>This engine has <b>no licence/SDK activation of any kind</b>: there is no key
+ * to enter, no activation call and nothing to keep valid at runtime.</p>
  */
 public class BoxApplication extends Application {
 
-    private static final String TAG = "BoxApplication";
+    static {
+        // Runs at class load — before attachBaseContext(), before the engine is
+        // touched and before any other app code. This is what lets the crash
+        // handler catch a failure inside the engine's own boot.
+        CrashHandler.install();
+    }
 
-    /** Sandbox SDK key — activated automatically in {@link #onCreate()}. */
-    private static final String SDK_KEY = "Z4T2ZYUIYDWOG1JD7635";
+    private static final String TAG = "BoxApplication";
 
     /**
      * Payload library name — the single string to change when swapping payloads.
      *
      * <p>The guest copy is expected at
-     * {@code <filesDir>/loader/lib<TARGET_LIB>.so}, the same staging location the
-     * reference host uses; if it is absent the copy packaged in this APK as
-     * {@code lib<TARGET_LIB>.so} is loaded instead.</p>
+     * {@code <filesDir>/loader/lib<TARGET_LIB>.so}; if it is absent the copy
+     * packaged in this APK as {@code lib<TARGET_LIB>.so} is loaded instead.</p>
      */
     private static final String TARGET_LIB = "zyn-bs";
 
     /** Folder and file name derived from {@link #TARGET_LIB}. */
     private static final String LOADER_DIR = "loader";
     private static final String LIB_FILE = "lib" + TARGET_LIB + ".so";
-
-    /** The one game this loader targets; only its guest process gets the payload. */
-    private static final String TARGET_PACKAGE = "com.netease.newspike";
 
     private static BoxApplication singleton;
     private static volatile boolean sPayloadLoaded;
@@ -63,22 +63,19 @@ public class BoxApplication extends Application {
 
     @Override
     protected void attachBaseContext(Context base) {
+        // First statement on purpose: gives the crash handler a context before
+        // anything else (super or the engine) can throw.
+        CrashHandler.attach(base);
         super.attachBaseContext(base);
         try {
-            EliteInstaller.get().doAttachBaseContext(base, new ClientConfiguration() {
+            BlackBoxCore.get().doAttachBaseContext(base, new ClientConfiguration() {
                 @Override
                 public String getHostPackageName() {
                     return base.getPackageName();
                 }
 
-                // The engine resolves these two reflectively, so like the
-                // reference host they carry no @Override: ClientConfiguration
-                // does not declare them, annotating them fails the build.
+                @Override
                 public boolean isHideRoot() {
-                    return true;
-                }
-
-                public boolean isHideXposed() {
                     return true;
                 }
 
@@ -88,7 +85,14 @@ public class BoxApplication extends Application {
                 }
 
                 @Override
-                public boolean requestInstallPackage(File file) {
+                public boolean isDisableFlagSecure() {
+                    return true;
+                }
+
+                @Override
+                public boolean requestInstallPackage(File file, int userId) {
+                    // The host installs nothing on the engine's behalf; the
+                    // launcher registers the game's own APK explicitly.
                     return false;
                 }
             });
@@ -102,54 +106,43 @@ public class BoxApplication extends Application {
         super.onCreate();
         singleton = this;
 
-        // 1. Automatic SDK key activation — no UI, no user input.
-        try {
-            MetaActivationManager.activateSdk(SDK_KEY);
-            Log.i(TAG, "SDK key activated");
-        } catch (Throwable t) {
-            Log.e(TAG, "activateSdk failed", t);
-        }
-
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
 
-        // 2. Engine create.
         try {
-            EliteInstaller.get().doCreate();
+            BlackBoxCore.get().doCreate();
         } catch (Throwable t) {
             Log.e(TAG, "doCreate failed", t);
         }
 
-        // 3. Guest-side hook that loads the payload.
+        // The engine exposes no guest-Application lifecycle callback, so the
+        // payload is loaded here instead: in a sandboxed process this runs at
+        // process start, before the engine binds the guest Application.
+        if (isSandboxProcess()) {
+            loadPayload();
+        }
+
+        // The engine may have installed its own default handler while booting;
+        // put ours back on top so its crashes are still written to disk.
+        CrashHandler.reassert();
+    }
+
+    /** True only inside a process the engine created for a guest app. */
+    private boolean isSandboxProcess() {
         try {
-            EliteInstaller.get().addAppLifecycleCallback(new AppLifecycleCallback() {
-                @Override
-                public void beforeApplicationOnCreate(String packageName, String processName,
-                                                      Application application, int userId) {
-                    // Same hook the reference host uses: inside the guest process,
-                    // immediately before the game's own Application is created.
-                    // Restricted to the game's main process, again like the
-                    // reference (drop the processName test to cover sub-processes).
-                    if (!TARGET_PACKAGE.equals(packageName)
-                            || !TARGET_PACKAGE.equals(processName)) {
-                        return;
-                    }
-                    loadPayload();
-                }
-            });
+            return BlackBoxCore.get().isBlackProcess();
         } catch (Throwable t) {
-            Log.e(TAG, "addAppLifecycleCallback failed", t);
+            Log.w(TAG, "isBlackProcess failed", t);
+            return false;
         }
     }
 
     /**
-     * Loads the native payload in the guest process that is about to create the
-     * game's Application.
+     * Loads the native payload in the sandboxed process.
      *
-     * <p>Same staging location the reference host uses: {@code lib<TARGET_LIB>.so}
-     * inside the {@code loader} folder of the files directory. If that copy is
-     * absent, the one packaged in this APK is loaded instead, so the loader still
-     * works when nothing was staged. Never fatal, so a missing payload cannot
-     * kill the game process.</p>
+     * <p>Prefers the staged copy at {@code <filesDir>/loader/lib<TARGET_LIB>.so}
+     * and falls back to the copy packaged in this APK, so the loader still works
+     * when nothing was staged. Never fatal: a missing payload must not kill the
+     * game process.</p>
      */
     private void loadPayload() {
         if (sPayloadLoaded) {

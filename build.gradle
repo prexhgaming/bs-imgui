@@ -20,8 +20,8 @@ ext {
     minSdk = 24
 
     // The payload's NDK (pinned again in app/build.gradle). It is the only
-    // native build left: the elite engine (app/libs/elite.aar) ships its .so
-    // files prebuilt, so there is no engine NDK, no CMake project and no
+    // native build left: the BlackBox engine (app/libs/Bcore-release.aar) ships
+    // its .so files prebuilt, so there is no engine NDK, no CMake project and no
     // gradle-driven CMake install.
     ndkVersion = "27.0.12077973"
 }

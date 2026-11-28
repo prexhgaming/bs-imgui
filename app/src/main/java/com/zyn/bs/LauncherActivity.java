@@ -1,11 +1,13 @@
 package com.zyn.bs;
 
+import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -17,19 +19,18 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.elite.EliteInstaller;
-import com.elite.entity.pm.InstallResult;
 import com.zyn.bs.ui.LauncherView;
+
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.entity.pm.InstallResult;
 
 /**
  * The loader's only activity: the sandbox flow, with the UI delegated to
  * {@link LauncherView} in {@code com.zyn.bs.ui}.
  *
- * <p>Engine calls are the ones the vbox host app makes —
- * {@link EliteInstaller#isInstalled}, {@code installPackageAsUser},
- * {@code launchApk}, {@code stopPackage}, {@code clearPackage},
- * {@code isInstallGms}, {@code installGms} and
- * {@code getBAccountManager()} — so behaviour matches the reference module.</p>
+ * <p>Engine calls go through {@link BlackBoxCore} —
+ * {@code isInstalled}, {@code installPackageAsUser} and {@code launchApk} — on
+ * the same sandbox user slot, so behaviour matches the engine's contract.</p>
  *
  * <p>A single target game is used ({@link #TARGET_PACKAGE}); its label and icon
  * are read from the device at runtime, never hardcoded. There is no OBB step and
@@ -69,7 +70,27 @@ public class LauncherActivity extends AppCompatActivity {
 
         view.setGameTitle(TARGET_PACKAGE);
         view.setPrimaryEnabled(false);
+        requestCrashLogPermission();
         resolveGame();
+    }
+
+    /**
+     * Asks for the storage grant that lets {@link CrashHandler} write into the
+     * public Download/Documents folders. The handler itself cannot ask, so
+     * without this it silently falls back to the app-specific directory. A
+     * denial is harmless and never blocks the launcher.
+     */
+    private void requestCrashLogPermission() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[] {Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1001);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "storage permission request failed", t);
+        }
     }
 
     /** Reads the game's label and icon off the main thread. */
@@ -134,9 +155,9 @@ public class LauncherActivity extends AppCompatActivity {
 
         new Thread(() -> {
             try {
-                if (!EliteInstaller.get().isInstalled(TARGET_PACKAGE, USER_ID)) {
+                if (!BlackBoxCore.get().isInstalled(TARGET_PACKAGE, USER_ID)) {
                     InstallResult result =
-                            EliteInstaller.get().installPackageAsUser(TARGET_PACKAGE, USER_ID);
+                            BlackBoxCore.get().installPackageAsUser(TARGET_PACKAGE, USER_ID);
                     if (result == null || !result.success) {
                         String detail = result != null && result.msg != null
                                 ? result.msg : "unknown error";
@@ -157,7 +178,7 @@ public class LauncherActivity extends AppCompatActivity {
     private void launchGame() {
         view.showBusy(R.string.status_launching, R.string.hint_launching);
         try {
-            EliteInstaller.get().launchApk(TARGET_PACKAGE, USER_ID);
+            BlackBoxCore.get().launchApk(TARGET_PACKAGE, USER_ID);
             busy = false;
             view.showRunning();
             Toast.makeText(this, "Launching the game...", Toast.LENGTH_SHORT).show();

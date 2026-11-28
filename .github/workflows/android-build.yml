@@ -1,8 +1,8 @@
 name: Android Build
 
 # Builds and signs the loader APK with Gradle. Gradle drives the payload's
-# native build itself (ndk-build over app/src/main/jni). The elite engine
-# (app/libs/elite.aar) needs no native build at all: its prebuilt .so files
+# native build itself (ndk-build over app/src/main/jni). The BlackBox engine
+# (app/libs/Bcore-release.aar) needs no native build at all: its prebuilt .so files
 # ship inside the AAR.
 #
 # Only `assembleRelease` is built. AGP force-disables R8 obfuscation AND
@@ -137,7 +137,7 @@ jobs:
             grep -E '^[[:space:]]*APP_(ABI|PLATFORM|MODULES)' app/src/main/jni/Application.mk || true
             # Fingerprint the engine AAR so a stale or locally edited engine is
             # visible in the log.
-            echo "== engine: $(sha256sum app/libs/elite.aar | cut -d' ' -f1 | cut -c1-16) (app/libs/elite.aar) =="
+            echo "== engine: $(sha256sum app/libs/Bcore-release.aar | cut -d' ' -f1 | cut -c1-16) (app/libs/Bcore-release.aar) =="
             echo "== started: $(date -u +%FT%TZ) =="
             echo
           } | tee "$LOG_FILE"
@@ -172,7 +172,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           # The payload native lib must be inside the APK. The engine's own .so
-          # files come from app/libs/elite.aar and are reported below instead of
+          # files come from app/libs/Bcore-release.aar and are reported below instead of
           # being asserted by name, so an engine update cannot fail the build.
           if ! unzip -l "$apk" | grep -q "lib/armeabi-v7a/libzyn-bs.so"; then
             echo "::error::lib/armeabi-v7a/libzyn-bs.so is missing from $apk"
