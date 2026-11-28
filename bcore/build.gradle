@@ -76,14 +76,14 @@ android {
         }
     }
 
+    // Only properties that still exist in AGP 8: upstream's `textOutput` and
+    // `textReport` were removed/renamed and made the whole module fail to
+    // evaluate ("Value is null"). Lint is not part of assembleDebug anyway, so
+    // this stays to the three long-standing booleans.
     lint {
-        checkReleaseBuilds false
-        abortOnError false
-        warningsAsErrors false
-        disable "UnusedResources", 'RestrictedApi'
-        textOutput "stdout"
-        textReport false
-        checkOnly 'NewApi', 'InlinedApi'
+        checkReleaseBuilds = false
+        abortOnError = false
+        warningsAsErrors = false
     }
 }
 
