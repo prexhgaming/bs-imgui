@@ -2,10 +2,13 @@ package com.zyn.bs;
 
 import android.app.Application;
 import android.content.Context;
+import android.os.Build;
 import android.util.Log;
 
 import com.fvbox.lib.FCore;
 import com.fvbox.lib.abs.ApplicationCallback;
+
+import top.canyie.pine.PineConfig;
 
 /**
  * Loader-side boot for the SpaceCore engine ({@code com.fvbox.lib.FCore}).
@@ -47,9 +50,25 @@ public class BoxApplication extends Application {
         super.attachBaseContext(base);
         sHostPackage = base.getPackageName();
 
-        // 0. Persistent logging first, so a failure in the boot sequence below
-        //    still leaves a trace on disk instead of only in logcat.
-        CrashLog.init(base);
+        // 0. Compatibility shim for Android 14+ (API 34). The pine snapshot
+        //    bundled in this SpaceCore AAR hard-aborts in its native init0():
+        //    "Unexpected android version 34" -> SIGABRT. FCore.init() calls
+        //    Pine.disableJitInline() in every :scN guest process, so the guest
+        //    dies before install can finish. PineConfig.sdkLevel is exactly the
+        //    value Pine.initialize() passes to init0(), and 33 is the newest
+        //    version this build knows (it already treats pre-release Tiramisu
+        //    as 33). Clamp it before the engine runs.
+        //    This only changes pine's internal version selector; it does not
+        //    spoof the platform to the app or to the engine's other logic.
+        if (Build.VERSION.SDK_INT >= 34) {
+            try {
+                PineConfig.sdkLevel = 33;
+                Log.w(TAG, "Android " + Build.VERSION.SDK_INT
+                        + ": clamped PineConfig.sdkLevel to 33 (bundled pine has no API 34 path)");
+            } catch (Throwable t) {
+                Log.e(TAG, "could not clamp PineConfig.sdkLevel", t);
+            }
+        }
 
         // 1. Engine init. Must run before any other FCore call, in every
         //    process of this APK (the guest processes instantiate this same
@@ -74,7 +93,7 @@ public class BoxApplication extends Application {
     public void onCreate() {
         super.onCreate();
         try {
-            CrashLog.i(TAG, "loader started: host=" + sHostPackage
+            Log.i(TAG, "loader started: host=" + sHostPackage
                     + " engine=" + FCore.get().getVersion()
                     + " process=" + FCore.get().getProcessType());
         } catch (Throwable t) {

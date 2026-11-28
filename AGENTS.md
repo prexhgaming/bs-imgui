@@ -197,10 +197,19 @@ The loader must not hand-roll any of this:
   `com.google.code.gson:gson`. Upstream's demo only got it via `retrofit-converter-gson`, which is why
   it is easy to miss.
 - **A bare `null` in an error toast means `Throwable.getMessage()` was null**, i.e. the engine *threw*
-  (often a `NullPointerException` with no message) rather than rejecting the install. Use
-  `CrashLog.describe(t)` — it always includes the exception class — and read
-  `files/logs/loader.log` instead of guessing. `android.util.Log` alone is logcat-only and is gone
-  once the cable is unplugged, which is why nothing was available when this first came up.
+  (often a `NullPointerException` with no message) rather than rejecting the install. `LaunchController`
+  now prints the exception class instead. The full stack is only in logcat: capture it with
+  `adb logcat -v time LaunchController:V BoxApplication:V NativeBridge:V AndroidRuntime:E *:S`.
+  There is no on-device log file — the engine has no built-in file logger; `android.log` is a logcat
+  capture.
+- **Android 14 (API 34) aborts the bundled pine before install completes.** `FCore.init()` calls
+  `Pine.disableJitInline()` in every `:scN` guest process; the pine snapshot inside this AAR has no API
+  34 path and calls `abort("Unexpected android version 34")` from native `init0()`, surfacing as
+  `signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x4` under `Pine.initialize`. Matching
+  targetSdk to upstream's 28 does **not** help: the check is against the device's running API level.
+  `BoxApplication.attachBaseContext` clamps `PineConfig.sdkLevel` to 33 **before** `FCore.init` — do
+  not remove this or move it after init. `PineConfig` is kept intact by the AAR's consumer rules
+  (`-keep class top.canyie.** {*; }`).
 - **`android:extractNativeLibs` from the AAR is NOT merged by AGP.** The engine's manifest asks for
   extraction, but AGP drops that attribute from libraries and drives it from the DSL instead, logging
   `extractNativeLibs is set to true in a dependency's AndroidManifest.xml`. `app/build.gradle` sets
@@ -210,17 +219,6 @@ The loader must not hand-roll any of this:
 - **Dobby is now linked exactly once** (payload only). The old engine statically linked its own
   `libdobby.a`; SpaceCore uses shadowhook/pine instead, so the former "two Dobbies fight over hook
   slots" hazard is gone. Do not reintroduce a second static Dobby.
-
-## Logs
-- **`files/logs/loader.log`** (internal storage: `/data/data/com.zyn.bs/files/logs/loader.log`), written
-  by `CrashLog`; rotated to `loader.log.1` at 512 KB. It mirrors the engine-facing logcat lines and
-  records uncaught exceptions via a default handler.
-- Pull it from a debug build (what CI ships) without root:
-  `adb exec-out run-as com.zyn.bs cat files/logs/loader.log > loader.log`.
-- Live logcat, filtered to the tags this app uses:
-  `adb logcat -v time LaunchController:V BoxApplication:V NativeBridge:V CrashLog:V AndroidRuntime:E *:S`.
-- Tags: `BoxApplication` (boot, engine version/process type), `LaunchController` (install/launch
-  sequence), `NativeBridge` (payload), `CrashLog` (logger itself).
 
 ## Engine packaging (do not reintroduce a flat jar)
 - The engine is **only** ever consumed as `implementation project(':Spacecore')`, which resolves the
