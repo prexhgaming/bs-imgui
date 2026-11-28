@@ -38,7 +38,15 @@ What differs in this one:
   were deleted (they provided the same `top.niunaijun.blackreflection` package — keeping both would
   be duplicate classes on the classpath).
 - its own `build.gradle` used a legacy `dexOptions { }` block, removed in AGP 8.x and therefore not
-  carried over.
+  carried over, and a legacy `lintOptions` block whose `textOutput`/`textReport`/`check` lines use
+  method-call syntax that AGP 8 no longer accepts (it fails at *configuration* time with
+  `Value is null`) — only `checkReleaseBuilds`/`abortOnError` survive.
+- **`ClientConfiguration`'s method set is NOT stable across engines.** This one dropped
+  `isUseVpnNetwork()` and `isDisableFlagSecure()` (which the previous two had) and added
+  `isHideXposed()`. Overriding a method the engine lacks is a hard compile error
+  (`method does not override or implement a method from a supertype`), so when swapping engines check
+  `Bcore/.../app/configuration/ClientConfiguration.java` against
+  `app/src/main/java/com/zyn/bs/BoxApplication.java`.
 The swap is not half-reversible; the pre-first-swap state is tagged `pre-engine-swap` on `main`.
 
 Why source and not an AAR: the original core was a prebuilt `mundo-release.aar` that shipped

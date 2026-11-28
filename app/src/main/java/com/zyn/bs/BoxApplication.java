@@ -117,18 +117,17 @@ public class BoxApplication extends Application {
             return true;
         }
 
+        // This engine replaced `isUseVpnNetwork()` / `isDisableFlagSecure()`
+        // (which the previous engines had) with `isHideXposed()`. Overriding the
+        // old two is a compile error here: "method does not override or
+        // implement a method from a supertype".
+        @Override
+        public boolean isHideXposed() {
+            return true;
+        }
+
         @Override
         public boolean isEnableDaemonService() {
-            return false;
-        }
-
-        @Override
-        public boolean isUseVpnNetwork() {
-            return false;
-        }
-
-        @Override
-        public boolean isDisableFlagSecure() {
             return false;
         }
 
